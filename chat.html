@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="uz">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Nexora Ai — Dashboard</title>
+    <title>Nexora AI — Chat</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -11,7 +11,9 @@
       <button class="menu-btn" id="menuBtn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="dropdownMenu">☰</button>
       <div class="header-logo">Nexora <span class="header-logo-ai">AI</span></div>
     </header>
+    
     <div class="menu-overlay" id="menuOverlay"></div>
+    
     <aside class="dropdown-menu" id="dropdownMenu" aria-hidden="true">
       <div class="menu-panel-header">
         <div class="menu-title">Menu</div>
@@ -19,18 +21,19 @@
       </div>
       <div class="menu-content" id="menuContent"></div>
     </aside>
+    
     <main class="chat-app">
       <section class="chat-panel" id="chatPanel">
         <div class="chat-header">
-          <h1>Чат</h1>
-          <p>Напишите вопрос, я отвечу как GPT.</p>
+          <h1>Chat</h1>
+          <p>Savolingizni yozing, men GPT sifatida javob beraman.</p>
         </div>
 
         <div class="chat-history" id="chatHistory" aria-live="polite"></div>
 
         <form class="chat-input" id="chatForm">
-          <textarea id="promptInput" placeholder="Введите текст сообщения..." rows="1" required></textarea>
-          <button type="submit">Отправить</button>
+          <textarea id="promptInput" placeholder="Xabaringizni yozing..." rows="1" required></textarea>
+          <button type="submit" class="ripple-effect">Yuborish</button>
         </form>
       </section>
     </main>
