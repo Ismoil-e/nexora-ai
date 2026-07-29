@@ -7,7 +7,19 @@ const dropdownMenu = document.getElementById('dropdownMenu');
 const menuOverlay = document.getElementById('menuOverlay');
 const menuContent = document.getElementById('menuContent');
 
-const session = { title: 'Chat', log: [] };
+const STORAGE_KEY = 'nexora_single_chat';
+let messages = [];
+
+function loadMessages() {
+  const email = localStorage.getItem('userEmail') || 'guest';
+  const data = localStorage.getItem(`${STORAGE_KEY}_${email}`);
+  messages = data ? JSON.parse(data) : [];
+}
+
+function saveMessages() {
+  const email = localStorage.getItem('userEmail') || 'guest';
+  localStorage.setItem(`${STORAGE_KEY}_${email}`, JSON.stringify(messages));
+}
 
 function getStoredProfile() {
   return JSON.parse(localStorage.getItem('userProfile') || 'null');
@@ -23,7 +35,6 @@ function renderProfileAvatar(profile) {
   if (profile?.photoData) {
     return `<img class="profile-avatar-image" src="${profile.photoData}" alt="Profile photo">`;
   }
-
   return getInitials(profile);
 }
 
@@ -34,9 +45,7 @@ function renderMenu() {
   const profile = getStoredProfile();
 
   if (!isLoggedIn || !profile) {
-    menuContent.innerHTML = `
-      <a href="login.html" class="menu-link">Login</a>
-    `;
+    menuContent.innerHTML = `<a href="login.html" class="menu-link">Login</a>`;
     return;
   }
 
@@ -72,7 +81,7 @@ function renderMenu() {
 
   if (topUpBtn) {
     topUpBtn.addEventListener('click', () => {
-      alert('Hisobni to‘ldirish bo‘limi keyingi qadamda ulanadi.');
+      alert('Hisobni to\'ldirish bo\'limi keyingi qadamda ulanadi.');
     });
   }
 
@@ -89,7 +98,6 @@ function renderMenu() {
 
 function setMenuState(isOpen) {
   if (!dropdownMenu || !menuBtn || !menuOverlay) return;
-
   dropdownMenu.classList.toggle('show', isOpen);
   menuOverlay.classList.toggle('show', isOpen);
   dropdownMenu.setAttribute('aria-hidden', String(!isOpen));
@@ -106,102 +114,123 @@ function closeMenu() {
   setMenuState(false);
 }
 
-function appendMessage(text, type) {
+function renderMarkdown(text) {
+  if (typeof marked !== 'undefined') {
+    marked.setOptions({ breaks: true, gfm: true });
+    return marked.parse(text);
+  }
+  return text.replace(/\n/g, '<br>');
+}
+
+function appendMessage(text, type, isTyping = false) {
   if (!chatHistory) return;
 
   const msg = document.createElement('div');
   msg.className = `message ${type}`;
-  msg.textContent = text;
+
+  if (type === 'ai') {
+    msg.innerHTML = renderMarkdown(text);
+  } else {
+    msg.textContent = text;
+  }
+
+  if (isTyping) msg.classList.add('typing');
+
   chatHistory.appendChild(msg);
   chatHistory.scrollTop = chatHistory.scrollHeight;
+  return msg;
+}
+
+async function typeMessage(msgElement, text) {
+  msgElement.classList.remove('typing');
+  msgElement.innerHTML = '';
+
+  const words = text.split(' ');
+  let currentText = '';
+
+  for (let i = 0; i < words.length; i++) {
+    currentText += (i === 0 ? '' : ' ') + words[i];
+    msgElement.innerHTML = renderMarkdown(currentText);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    await new Promise(resolve => setTimeout(resolve, 30));
+  }
 }
 
 function renderChat() {
   if (!chatHistory) return;
-
   chatHistory.innerHTML = '';
-  session.log.forEach((item) => appendMessage(item.text, item.type));
+  messages.forEach(item => appendMessage(item.text, item.type));
 }
-
-const GEMINI_API_KEY = 'AIzaSyC5vYonQWe45z07J5lIitdIfTDTqUw2BmU';
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-
-const SYSTEM_INSTRUCTION = `Sen "Nexora AI" — bizneslar uchun yaratilgan AI yordamchisisan.
-Sening vazifang:
-- Foydalanuvchining savollariga toliq, aniq va foydali javob berish
-- Loyiha haqida so'rashsa — Nexora AI platformasi haqida tushuntirish (login, profil, chat tizimi)
-- Dasturlash haqida so'rashsa — yordam berish (HTML, CSS, JS, Firebase)
-- Har doim professional va do'stona javob berish
-- Javoblarni qisqa va tushunarli yozish
-- Agar kerak bo'lsa, kod misollari bilan tushuntirish`;
 
 async function getGeminiReply(userText) {
   try {
-    const response = await fetch(GEMINI_API_URL, {
+    const history = messages.slice(-20).map(msg => ({
+      role: msg.type === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.text }]
+    }));
+
+    const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-        contents: [{ parts: [{ text: userText }] }]
-      })
+      body: JSON.stringify({ message: userText, history })
     });
 
     if (!response.ok) {
-      throw new Error(`API xatosi: ${response.status}`);
+      const err = await response.json();
+      throw new Error(err.error || `API xatosi: ${response.status}`);
     }
 
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Javob olinmadi.';
+    return data.reply || 'Javob olinmadi.';
   } catch (error) {
-    console.error('Gemini API xatosi:', error);
+    console.error('Chat API xatosi:', error);
     return `Xatolik yuz berdi: ${error.message}`;
   }
 }
 
 async function onSubmit(event) {
   event.preventDefault();
-
   if (!promptInput) return;
+
   const prompt = promptInput.value.trim();
   if (!prompt) return;
 
-  session.log.push({ text: prompt, type: 'user' });
+  messages.push({ text: prompt, type: 'user' });
+  saveMessages();
+
   appendMessage(prompt, 'user');
   promptInput.value = '';
+  promptInput.style.height = 'auto';
 
-  const typingIndicator = { text: 'Nexora AI javob yozmoqda...', type: 'ai' };
-  session.log.push(typingIndicator);
-  appendMessage(typingIndicator.text, 'ai');
+  const typingMsg = appendMessage('Yozmoqda...', 'ai', true);
 
   const aiReply = await getGeminiReply(prompt);
-  session.log[session.log.length - 1] = { text: aiReply, type: 'ai' };
-  renderChat();
+
+  messages.push({ text: aiReply, type: 'ai' });
+  saveMessages();
+
+  await typeMessage(typingMsg, aiReply);
+}
+
+function autoResize() {
+  promptInput.style.height = 'auto';
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 150) + 'px';
 }
 
 function init() {
+  loadMessages();
   renderMenu();
 
-  if (menuBtn) {
-    menuBtn.addEventListener('click', toggleMenu);
-  }
-
-  if (menuCloseBtn) {
-    menuCloseBtn.addEventListener('click', closeMenu);
-  }
-
-  if (menuOverlay) {
-    menuOverlay.addEventListener('click', closeMenu);
-  }
+  if (menuBtn) menuBtn.addEventListener('click', toggleMenu);
+  if (menuCloseBtn) menuCloseBtn.addEventListener('click', closeMenu);
+  if (menuOverlay) menuOverlay.addEventListener('click', closeMenu);
 
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      closeMenu();
-    }
+    if (event.key === 'Escape') closeMenu();
   });
 
-  if (chatForm) {
-    chatForm.addEventListener('submit', onSubmit);
-  }
+  if (chatForm) chatForm.addEventListener('submit', onSubmit);
+  if (promptInput) promptInput.addEventListener('input', autoResize);
 
   renderChat();
 }

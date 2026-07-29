@@ -44,6 +44,19 @@ function setSession(user) {
   }));
 }
 
+function validatePassword(password) {
+  if (password.length < 6) {
+    return 'Parol kamida 6 ta belgi bo\'lishi kerak.';
+  }
+  if (!/[A-Za-z]/.test(password)) {
+    return 'Parol kamida 1 ta harf bo\'lishi kerak.';
+  }
+  if (!/[0-9]/.test(password)) {
+    return 'Parol kamida 1 ta raqam bo\'lishi kerak.';
+  }
+  return null;
+}
+
 if (registerLink) {
   registerLink.addEventListener('click', (event) => {
     event.preventDefault();
@@ -59,18 +72,21 @@ if (loginForm) {
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value.trim();
     if (!email || !password) {
-      alert('Iltimos, barcha maydonlarni to‘ldiring.');
+      alert('Iltimos, barcha maydonlarni to\'ldiring.');
       return;
     }
 
     const users = getUsers();
-    let user = users.find((item) => item.email === email);
+    const user = users.find((item) => item.email === email);
 
     if (!user) {
-      const profile = createProfileFromEmail(email);
-      user = { email, password, ...profile };
-      users.push(user);
-      saveUsers(users);
+      alert('Bu email topilmadi. Iltimos, avval ro\'yxatdan o\'ting.');
+      return;
+    }
+
+    if (user.password !== password) {
+      alert('Parol noto\'g\'ri. Qaytadan urinib ko\'ring.');
+      return;
     }
 
     setSession(user);
@@ -90,7 +106,13 @@ if (registerForm) {
     const password = document.getElementById('regPassword').value.trim();
 
     if (!firstName || !lastName || !businessName || !email || !password) {
-      alert('Iltimos, barcha maydonlarni to‘ldiring.');
+      alert('Iltimos, barcha maydonlarni to\'ldiring.');
+      return;
+    }
+
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      alert(passwordError);
       return;
     }
 
@@ -115,7 +137,7 @@ if (registerForm) {
     users.push(user);
     saveUsers(users);
     setSession(user);
-    alert('Ro‘yxatdan o‘tish muvaffaqiyatli bajarildi.');
+    alert('Ro\'yxatdan o\'tish muvaffaqiyatli bajarildi.');
     window.location.href = 'chat.html';
   });
 }

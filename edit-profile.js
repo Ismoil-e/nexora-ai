@@ -30,8 +30,10 @@ function renderPreview(profile) {
 }
 
 function loadProfile() {
+  const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
   const profile = getStoredProfile();
-  if (!profile) {
+
+  if (!isLoggedIn || !profile) {
     window.location.href = 'login.html';
     return null;
   }
@@ -50,7 +52,6 @@ function saveProfile(profile) {
   const users = JSON.parse(localStorage.getItem('users') || '[]');
   const updatedUsers = users.map((user) => {
     if (user.email !== profile.email) return user;
-
     return {
       ...user,
       firstName: profile.firstName,
@@ -67,6 +68,11 @@ if (profilePhotoInput) {
   profilePhotoInput.addEventListener('change', () => {
     const file = profilePhotoInput.files?.[0];
     if (!file) return;
+
+    if (file.size > 500000) {
+      alert('Rasm hajmi 500KB dan kichik bo\'lishi kerak.');
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = () => {
