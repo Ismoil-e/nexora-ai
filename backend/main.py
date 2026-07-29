@@ -25,7 +25,8 @@ from app.core.middleware import register_middleware
 setup_logging()
 logger = get_logger(__name__)
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "public"
+FRONTEND_SRC_DIR = Path(__file__).resolve().parent.parent / "frontend" / "src"
 
 
 def create_app() -> FastAPI:
@@ -115,9 +116,10 @@ def create_app() -> FastAPI:
     async def serve_frontend(path: str):
         if path.startswith("api/") or path.startswith("docs") or path.startswith("redoc") or path.startswith("openapi"):
             raise HTTPException(status_code=404, detail="Not found")
-        file = FRONTEND_DIR / path
-        if file.exists() and file.is_file():
-            return FileResponse(file)
+        for base in (FRONTEND_DIR, FRONTEND_SRC_DIR):
+            file = base / path
+            if file.exists() and file.is_file():
+                return FileResponse(file)
         return FileResponse(FRONTEND_DIR / "index.html")
 
     @app.on_event("startup")
