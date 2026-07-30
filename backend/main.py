@@ -25,8 +25,8 @@ from app.core.middleware import register_middleware
 setup_logging()
 logger = get_logger(__name__)
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "public"
-FRONTEND_SRC_DIR = Path(__file__).resolve().parent.parent / "frontend" / "src"
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "apps" / "web" / "public"
+FRONTEND_SRC_DIR = Path(__file__).resolve().parent.parent / "apps" / "web" / "src"
 
 
 def create_app() -> FastAPI:
