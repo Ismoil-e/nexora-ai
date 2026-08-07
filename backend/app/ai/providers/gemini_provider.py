@@ -59,6 +59,60 @@ class GeminiProvider(AIProviderBase):
             "model": model_name,
         }
 
+    async def chat_stream(
+        self,
+        messages: list[dict],
+        model: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ):
+        import json
+
+        model_name = model or "gemini-2.5-flash"
+        url = f"{self.base_url}/models/{model_name}:streamGenerateContent?alt=sse&key={self.api_key}"
+
+        contents = []
+        for msg in messages:
+            role = "model" if msg["role"] in ("assistant", "model") else "user"
+            contents.append({
+                "role": role,
+                "parts": [{"text": msg["content"]}],
+            })
+
+        payload = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+
+        if system_prompt:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_prompt}]
+            }
+
+        async with self._client.stream("POST", url, json=payload) as response:
+            if response.status_code != 200:
+                error_text = await response.aread()
+                raise Exception(f"Gemini API stream error: {response.status_code} - {error_text.decode('utf-8')}")
+
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data_str = line[6:].strip()
+                    try:
+                        chunk = json.loads(data_str)
+                        candidates = chunk.get("candidates", [])
+                        if candidates:
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            for p in parts:
+                                text = p.get("text", "")
+                                if text:
+                                    yield text
+                    except json.JSONDecodeError:
+                        continue
+
     async def create_embedding(self, text: str, model: str | None = None) -> list[float]:
         model_name = model or "text-embedding-004"
         url = f"{self.base_url}/models/{model_name}:embedContent?key={self.api_key}"

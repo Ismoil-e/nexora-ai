@@ -74,6 +74,8 @@ graph TD
 ## 3. Immediate Technical Implementation Milestones
 
 - [x] **Phase 1: Foundation Clean Architecture** (FastAPI, Modular routers, Multi-tenant DB schema, OpenRouter/Gemini AI providers, Glassmorphism UI)
+- [x] **Phase 1.5: AI Agent Framework** (Registry, Manager, lifecycle pipeline, default capability agents, Cognitive stubs, Celery agent worker)
+- [x] **Phase 1.6: Workflow Automation Engine** (Workflow executor, action/trigger registries, approvals, Celery long-running jobs, REST APIs)
 - [ ] **Phase 2: Full Document Intelligence & RAG** (File parsers for PDF/Excel/Docx, Vector search endpoints, Document Q&A)
 - [ ] **Phase 3: Central Multi-Agent Orchestration** (Tool calling, Agent router, Dynamic module switching)
 - [ ] **Phase 4: Proactive Monitoring Engine** (Background workers, Anomaly detection, Real-time Alerts & SSE Streaming)

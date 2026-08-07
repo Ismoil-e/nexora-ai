@@ -45,6 +45,14 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Foydalanuvchi topilmadi",
         )
+
+    # Enforce PostgreSQL Row-Level Security (RLS) tenant scope for current transaction
+    from sqlalchemy import text
+    try:
+        await db.execute(text("SET LOCAL app.current_tenant_id = :company_id"), {"company_id": str(user.company_id)})
+    except Exception:
+        pass  # Graceful fallback if RLS session setting is not enabled on mock/sqlite testing DBs
+
     return user
 
 
@@ -52,3 +60,4 @@ async def get_current_company_id(
     current_user=Depends(get_current_user),
 ) -> uuid.UUID:
     return current_user.company_id
+

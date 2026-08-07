@@ -9,6 +9,8 @@ celery_app = Celery(
         "app.workers.ocr_worker",
         "app.workers.embedding_worker",
         "app.workers.notification_worker",
+        "app.workers.agent_worker",
+        "app.workers.workflow_worker",
     ],
 )
 

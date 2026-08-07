@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     allowed_extensions: str = ".pdf,.docx,.doc,.xlsx,.csv,.txt,.png,.jpg,.jpeg,.webp"
 
     ocr_enabled: bool = True
+    agent_framework_enabled: bool = True
+    agent_async_char_threshold: int = 2000
 
     @property
     def allowed_extensions_list(self) -> list[str]:

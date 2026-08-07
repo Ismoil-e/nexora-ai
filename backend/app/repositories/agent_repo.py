@@ -38,6 +38,17 @@ class AgentRepository(BaseRepository[Agent]):
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_by_agent_key(self, company_id: uuid.UUID, agent_key: str) -> Agent | None:
+        if not hasattr(Agent, "agent_key"):
+            return None
+        stmt = select(Agent).where(
+            Agent.company_id == company_id,
+            Agent.agent_key == agent_key,
+            Agent.deleted_at.is_(None),
+        ).limit(1)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
 
 class AgentExecutionRepository(BaseRepository[AgentExecution]):
     def __init__(self, db):

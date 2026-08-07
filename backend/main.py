@@ -16,6 +16,7 @@ from app.api.v1 import (
     settings,
     tasks,
     users,
+    workflows,
 )
 from app.core.config import settings as app_settings
 from app.core.database import close_db, init_db
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router, prefix=api_v1_prefix)
     app.include_router(notifications.router, prefix=api_v1_prefix)
     app.include_router(agents.router, prefix=api_v1_prefix)
+    app.include_router(workflows.router, prefix=api_v1_prefix)
     app.include_router(tasks.router, prefix=api_v1_prefix)
     app.include_router(reports.router, prefix=api_v1_prefix)
     app.include_router(roles.router, prefix=api_v1_prefix)
@@ -126,7 +128,14 @@ def create_app() -> FastAPI:
     async def startup():
         logger.info("starting_server", service=app_settings.app_name)
         await init_db()
+        from app.agents.bootstrap import bootstrap_agents
+        from app.workflows.bootstrap import bootstrap_workflows
+
+        bootstrap_agents()
+        bootstrap_workflows()
         logger.info("database_initialized")
+        logger.info("agent_framework_bootstrapped")
+        logger.info("workflow_engine_bootstrapped")
 
     @app.on_event("shutdown")
     async def shutdown():

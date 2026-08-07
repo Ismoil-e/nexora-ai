@@ -96,6 +96,55 @@ class ChatService:
             "token_used": ai_response.get("token_count", 0),
         }
 
+    async def send_message_stream(self, chat_id: uuid.UUID, user_id: uuid.UUID, content: str):
+        import json
+
+        chat = await self.chat_repo.get(chat_id)
+        if not chat:
+            yield f"data: {json.dumps({'error': 'Chat topilmadi'})}\n\n"
+            return
+
+        user_msg = await self.message_repo.create(
+            chat_id=chat_id,
+            user_id=user_id,
+            role="user",
+            content=content,
+            token_count=len(content.split()),
+        )
+
+        messages = await self.message_repo.get_by_chat(chat_id)
+        history = [{"role": m.role, "content": m.content} for m in messages[0]]
+
+        full_ai_content = []
+
+        async for chunk in self.ai_service.chat_stream(
+            provider=chat.ai_provider,
+            model=chat.model,
+            messages=history + [{"role": "user", "content": content}],
+            system_prompt=None,
+        ):
+            full_ai_content.append(chunk)
+            payload = json.dumps({"content": chunk, "done": False})
+            yield f"data: {payload}\n\n"
+
+        complete_text = "".join(full_ai_content)
+        ai_tokens = len(complete_text.split())
+
+        ai_msg = await self.message_repo.create(
+            chat_id=chat_id,
+            user_id=user_id,
+            role="assistant",
+            content=complete_text,
+            token_count=ai_tokens,
+        )
+
+        total_tokens = chat.token_count + user_msg.token_count + ai_msg.token_count
+        await self.chat_repo.update(chat_id, token_count=total_tokens)
+
+        done_payload = json.dumps({"content": "", "done": True, "ai_message_id": str(ai_msg.id)})
+        yield f"data: {done_payload}\n\n"
+        yield "data: [DONE]\n\n"
+
     async def get_chat_history(self, chat_id: uuid.UUID, page: int = 1, page_size: int = 50) -> dict:
         messages, total = await self.message_repo.get_by_chat(chat_id, page, page_size)
         return {
@@ -110,3 +159,4 @@ class ChatService:
                 "created_at": m.created_at.isoformat(),
             } for m in messages],
         }
+

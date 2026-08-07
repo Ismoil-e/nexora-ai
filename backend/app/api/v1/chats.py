@@ -83,6 +83,21 @@ async def send_message(
     return result
 
 
+@router.post("/{chat_id}/stream")
+async def send_message_stream(
+    chat_id: uuid.UUID,
+    body: SendMessageRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from fastapi.responses import StreamingResponse
+
+    service = ChatService(db)
+    generator = service.send_message_stream(chat_id, current_user.id, body.content)
+    return StreamingResponse(generator, media_type="text/event-stream")
+
+
+
 @router.put("/{chat_id}")
 async def update_chat(
     chat_id: uuid.UUID,

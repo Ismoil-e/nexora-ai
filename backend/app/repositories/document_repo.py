@@ -72,3 +72,59 @@ class DocumentChunkRepository(BaseRepository[DocumentChunk]):
             "top_k": top_k,
         })
         return list(result.mappings().all())
+
+    async def search_hybrid(
+        self,
+        query_text: str,
+        embedding: list[float],
+        company_id: uuid.UUID,
+        top_k: int = 5,
+        vector_weight: float = 0.7,
+        text_weight: float = 0.3,
+    ) -> list[dict]:
+        from sqlalchemy import text
+
+        query = text("""
+            WITH vector_matches AS (
+                SELECT dc.id,
+                       ROW_NUMBER() OVER (ORDER BY dc.embedding <=> :embedding::vector ASC) AS vec_rank
+                FROM document_chunks dc
+                JOIN documents d ON d.id = dc.document_id
+                WHERE d.company_id = :company_id AND d.deleted_at IS NULL AND dc.embedding IS NOT NULL
+                LIMIT :limit_pool
+            ),
+            text_matches AS (
+                SELECT dc.id,
+                       ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('simple', dc.content), plainto_tsquery('simple', :query_text)) DESC) AS text_rank
+                FROM document_chunks dc
+                JOIN documents d ON d.id = dc.document_id
+                WHERE d.company_id = :company_id AND d.deleted_at IS NULL
+                  AND to_tsvector('simple', dc.content) @@ plainto_tsquery('simple', :query_text)
+                LIMIT :limit_pool
+            )
+            SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.token_count,
+                   (COALESCE(1.0 / (60 + vm.vec_rank), 0.0) * :vector_weight +
+                    COALESCE(1.0 / (60 + tm.text_rank), 0.0) * :text_weight) AS combined_score
+            FROM document_chunks dc
+            LEFT JOIN vector_matches vm ON dc.id = vm.id
+            LEFT JOIN text_matches tm ON dc.id = tm.id
+            WHERE vm.id IS NOT NULL OR tm.id IS NOT NULL
+            ORDER BY combined_score DESC
+            LIMIT :top_k
+        """)
+
+        result = await self.db.execute(query, {
+            "embedding": str(embedding),
+            "query_text": query_text,
+            "company_id": str(company_id),
+            "limit_pool": top_k * 4,
+            "top_k": top_k,
+            "vector_weight": vector_weight,
+            "text_weight": text_weight,
+        })
+        mappings = list(result.mappings().all())
+        if mappings:
+            return mappings
+
+        return await self.search_similar(embedding, company_id, top_k)
+

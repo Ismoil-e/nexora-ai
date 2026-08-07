@@ -88,12 +88,17 @@ class DocumentService:
         ai_service = AIService(self.db)
         query_embedding = await ai_service.create_embedding(query)
 
-        chunks = await self.chunk_repo.search_similar(query_embedding, company_id, top_k)
+        chunks = await self.chunk_repo.search_hybrid(
+            query_text=query,
+            embedding=query_embedding,
+            company_id=company_id,
+            top_k=top_k,
+        )
 
         if document_ids:
-            chunks = [c for c in chunks if str(c.document_id) in [str(d) for d in document_ids]]
+            chunks = [c for c in chunks if str(c.document_id if hasattr(c, "document_id") else c["document_id"]) in [str(d) for d in document_ids]]
 
-        context = "\n\n".join([c.content for c in chunks])
+        context = "\n\n".join([c.content if hasattr(c, "content") else c["content"] for c in chunks])
 
         response = await ai_service.chat(
             provider="gemini",
@@ -105,9 +110,15 @@ class DocumentService:
             system_prompt="Sen hujjatlar asosida savollarga javob beradigan AI yordamchisan.",
         )
 
+        sources = []
+        for c in chunks:
+            doc_id = str(c.document_id if hasattr(c, "document_id") else c["document_id"])
+            content_snippet = (c.content if hasattr(c, "content") else c["content"])[:200]
+            sources.append({"document_id": doc_id, "content": content_snippet})
+
         return {
             "answer": response["content"],
-            "sources": [{"document_id": str(c.document_id), "content": c.content[:200]} for c in chunks],
+            "sources": sources,
             "token_used": response.get("token_count", 0),
         }
 
