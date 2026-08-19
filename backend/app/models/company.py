@@ -35,3 +35,5 @@ class Company(BaseModel):
     tasks = relationship("Task", back_populates="company", lazy="selectin")
     notifications = relationship("Notification", back_populates="company", lazy="selectin")
     api_keys = relationship("ApiKey", back_populates="company", lazy="selectin")
+    integrations = relationship("Integration", back_populates="company", lazy="selectin")
+

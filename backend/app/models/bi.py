@@ -1,0 +1,240 @@
+import uuid
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.models.base import BaseModel
+
+
+class Dashboard(BaseModel):
+    __tablename__ = "dashboards"
+
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(64), default="general", nullable=False)  # executive, finance, operations, hr, sales
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_public_for_tenant: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    allowed_roles: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of role names
+    layout_config: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON grid configuration
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    widgets = relationship("DashboardWidget", back_populates="dashboard", cascade="all, delete-orphan", lazy="selectin")
+
+
+class DashboardWidget(BaseModel):
+    __tablename__ = "dashboard_widgets"
+
+    dashboard_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("dashboards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    widget_type: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )  # kpi_card, chart_line, chart_bar, chart_pie, table, heatmap, activity_feed, ai_summary, alert_list, forecast_chart
+    metric_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    query_config: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON config (filters, date_range, chart_options)
+    position_x: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    position_y: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    width: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    refresh_interval_sec: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
+
+    dashboard = relationship("Dashboard", back_populates="widgets")
+
+
+class KPI(BaseModel):
+    __tablename__ = "kpis"
+
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(
+        String(64),
+        default="operations",
+        nullable=False,
+    )  # finance, operations, hr, documents, ai, custom
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    calculation_type: Mapped[str] = mapped_column(
+        String(32),
+        default="query",
+        nullable=False,
+    )  # query, formula, external, manual
+    target_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    warning_threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
+    critical_threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str] = mapped_column(String(32), default="", nullable=False)  # USD, UZS, %, count, ms, days
+    current_value: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    previous_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="healthy", nullable=False)  # healthy, warning, critical, unknown
+    last_calculated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    formula_expression: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    meta_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    logs = relationship("KPILog", back_populates="kpi", cascade="all, delete-orphan", lazy="selectin")
+
+
+class KPILog(BaseModel):
+    __tablename__ = "kpi_logs"
+
+    kpi_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("kpis.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    recorded_value: Mapped[float] = mapped_column(Float, nullable=False)
+    target_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="healthy", nullable=False)
+    meta_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    kpi = relationship("KPI", back_populates="logs")
+
+
+class BIInsight(BaseModel):
+    __tablename__ = "bi_insights"
+
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), default="general", nullable=False)  # sales, operations, hr, documents, risks
+    severity: Mapped[str] = mapped_column(String(32), default="info", nullable=False)  # info, warning, critical
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)  # "Why" this insight occurred
+    recommended_actions: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of recommendations
+    related_entity_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    related_entity_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    is_acknowledged: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BIForecast(BaseModel):
+    __tablename__ = "bi_forecasts"
+
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    metric_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_period: Mapped[str] = mapped_column(String(64), nullable=False)  # e.g., "2026-Q4", "2026-09", "next_30_days"
+    predicted_value: Mapped[float] = mapped_column(Float, nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Float, default=0.85, nullable=False)  # 0.0 to 1.0
+    lower_bound: Mapped[float | None] = mapped_column(Float, nullable=True)
+    upper_bound: Mapped[float | None] = mapped_column(Float, nullable=True)
+    methodology: Mapped[str] = mapped_column(String(64), default="linear_trend", nullable=False)  # linear_trend, moving_avg, exponential, hybrid_llm
+    historical_points_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    meta_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BIAlertRule(BaseModel):
+    __tablename__ = "bi_alert_rules"
+
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    kpi_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    condition_operator: Mapped[str] = mapped_column(
+        String(32),
+        default="lt",
+        nullable=False,
+    )  # gt, lt, gte, lte, eq, neq, drop_pct, spike_pct
+    threshold_value: Mapped[float] = mapped_column(Float, nullable=False)
+    severity: Mapped[str] = mapped_column(String(32), default="warning", nullable=False)  # info, warning, critical
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notify_channels: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: ["in_app", "telegram", "email", "slack"]
+    last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
+class BIAlert(BaseModel):
+    __tablename__ = "bi_alerts"
+
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    rule_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bi_alert_rules.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(String(32), default="warning", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)  # active, acknowledged, resolved
+    triggered_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    threshold_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AnalyticsSnapshot(BaseModel):
+    __tablename__ = "analytics_snapshots"
+
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_date: Mapped[str] = mapped_column(String(32), nullable=False, index=True)  # YYYY-MM-DD
+    metrics_data: Mapped[str] = mapped_column(Text, nullable=False)  # JSON payload of aggregated metrics
+    department_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    project_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)

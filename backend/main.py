@@ -6,10 +6,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from app.api.v1 import (
     agents,
     auth,
+    bi,
     chats,
     companies,
     dashboard,
     documents,
+    integrations,
     notifications,
     reports,
     roles,
@@ -18,6 +20,7 @@ from app.api.v1 import (
     users,
     workflows,
 )
+
 from app.core.config import settings as app_settings
 from app.core.database import close_db, init_db
 from app.core.logging import get_logger, setup_logging
@@ -77,8 +80,11 @@ def create_app() -> FastAPI:
     app.include_router(notifications.router, prefix=api_v1_prefix)
     app.include_router(agents.router, prefix=api_v1_prefix)
     app.include_router(workflows.router, prefix=api_v1_prefix)
+    app.include_router(integrations.router, prefix=api_v1_prefix)
     app.include_router(tasks.router, prefix=api_v1_prefix)
+
     app.include_router(reports.router, prefix=api_v1_prefix)
+    app.include_router(bi.router, prefix=api_v1_prefix)
     app.include_router(roles.router, prefix=api_v1_prefix)
     app.include_router(settings.router, prefix=api_v1_prefix)
 

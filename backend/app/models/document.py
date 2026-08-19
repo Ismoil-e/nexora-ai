@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,10 +17,11 @@ class Document(BaseModel):
         nullable=False,
         index=True,
     )
-    uploaded_by: Mapped[uuid.UUID] = mapped_column(
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
+        index=True,
     )
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
     stored_path: Mapped[str] = mapped_column(String(1024), nullable=False)
@@ -31,11 +33,32 @@ class Document(BaseModel):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    processed_at: Mapped[str | None] = mapped_column(nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Document Intelligence extensions
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    detected_type: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)  # Contract, Invoice, Report, etc.
+    language: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    is_duplicate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    duplicate_of_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_system: Mapped[str] = mapped_column(String(32), default="user", nullable=False, index=True)  # user, integration, api, workflow
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    embedding_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    embedding_dimensions: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     company = relationship("Company", back_populates="documents")
     uploaded_by_user = relationship("User", back_populates="documents")
     chunks = relationship("DocumentChunk", back_populates="document", lazy="selectin", cascade="all, delete-orphan")
+    versions = relationship("DocumentVersion", back_populates="document", lazy="selectin", cascade="all, delete-orphan")
+    entities = relationship("DocumentEntity", back_populates="document", lazy="selectin", cascade="all, delete-orphan")
+    relationships = relationship("DocumentRelationship", back_populates="document", lazy="selectin", cascade="all, delete-orphan")
+    processing_jobs = relationship("DocumentProcessingJob", back_populates="document", lazy="selectin", cascade="all, delete-orphan")
+
 
 
 class DocumentChunk(BaseModel):

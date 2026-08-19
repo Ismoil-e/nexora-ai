@@ -8,10 +8,14 @@ celery_app = Celery(
     include=[
         "app.workers.ocr_worker",
         "app.workers.embedding_worker",
+        "app.workers.document_worker",
         "app.workers.notification_worker",
         "app.workers.agent_worker",
         "app.workers.workflow_worker",
+        "app.workers.integration_worker",
+        "app.workers.bi_worker",
     ],
+
 )
 
 celery_app.conf.update(

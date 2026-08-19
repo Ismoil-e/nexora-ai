@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_company_id, get_db
 from app.models.chat import Chat, ChatMessage
 from app.models.document import Document
-from app.models.task import Task
 from app.models.notification import Notification
+from app.models.task import Task
+from app.schemas.bi import DashboardDetailResponse
+from app.services.bi_service import BusinessIntelligenceService
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -32,14 +34,16 @@ async def get_dashboard_stats(
 
     pending_tasks = await db.scalar(
         select(func.count()).select_from(Task).where(
-            Task.company_id == company_id, Task.status.in_(["todo", "in_progress"]),
+            Task.company_id == company_id,
+            Task.status.in_(["todo", "in_progress"]),
             Task.deleted_at.is_(None),
         )
     )
 
     unread_notifications = await db.scalar(
         select(func.count()).select_from(Notification).where(
-            Notification.company_id == company_id, Notification.is_read.is_(False),
+            Notification.company_id == company_id,
+            Notification.is_read.is_(False),
         )
     )
 
@@ -58,3 +62,14 @@ async def get_dashboard_stats(
         "unread_notifications": unread_notifications or 0,
         "total_messages": total_messages or 0,
     }
+
+
+@router.get("/main", response_model=DashboardDetailResponse)
+async def get_main_dashboard(
+    company_id: uuid.UUID = Depends(get_current_company_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns the primary tenant dashboard with its widgets."""
+    svc = BusinessIntelligenceService(db)
+    dash = await svc.ensure_default_dashboard(company_id)
+    return dash

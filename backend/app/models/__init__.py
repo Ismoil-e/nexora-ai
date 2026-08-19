@@ -5,6 +5,13 @@ from app.models.role import Role, Permission, RolePermission
 from app.models.session import RefreshToken
 from app.models.chat import Chat, ChatMessage, ChatMemory
 from app.models.document import Document, DocumentChunk
+from app.models.document_intelligence import (
+    DocumentVersion,
+    DocumentEntity,
+    DocumentRelationship,
+    DocumentProcessingJob,
+)
+
 from app.models.agent import (
     Agent,
     AgentConfiguration,
@@ -31,13 +38,38 @@ from app.models.workflow import (
     WorkflowTrigger,
 )
 
+from app.models.integration import (
+    Integration,
+    IntegrationCredential,
+    WebhookSubscription,
+    IntegrationEvent,
+    IntegrationExecution,
+    IntegrationHealth,
+)
+from app.models.bi import (
+    Dashboard,
+    DashboardWidget,
+    KPI,
+    KPILog,
+    BIInsight,
+    BIForecast,
+    BIAlertRule,
+    BIAlert,
+    AnalyticsSnapshot,
+)
+
 __all__ = [
     "BaseModel",
     "Company", "User",
     "Role", "Permission", "RolePermission",
     "RefreshToken",
     "Chat", "ChatMessage", "ChatMemory",
-    "Document", "DocumentChunk",
+    "Document",
+    "DocumentChunk",
+    "DocumentVersion",
+    "DocumentEntity",
+    "DocumentRelationship",
+    "DocumentProcessingJob",
     "Agent",
     "AgentExecution",
     "AgentConfiguration",
@@ -59,4 +91,21 @@ __all__ = [
     "WorkflowLog",
     "WorkflowApproval",
     "WorkflowCondition",
+    "Integration",
+    "IntegrationCredential",
+    "WebhookSubscription",
+    "IntegrationEvent",
+    "IntegrationExecution",
+    "IntegrationHealth",
+    "Dashboard",
+    "DashboardWidget",
+    "KPI",
+    "KPILog",
+    "BIInsight",
+    "BIForecast",
+    "BIAlertRule",
+    "BIAlert",
+    "AnalyticsSnapshot",
 ]
+
+

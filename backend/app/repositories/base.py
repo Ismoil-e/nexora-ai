@@ -26,6 +26,10 @@ class BaseRepository(Generic[ModelType]):
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_id(self, id: uuid.UUID) -> ModelType | None:
+        """Alias of get() used across services and pipeline code."""
+        return await self.get(id)
+
     async def get_many(
         self,
         *filters,

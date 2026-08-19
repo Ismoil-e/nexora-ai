@@ -575,6 +575,235 @@ class FuturePluginAction(_ServiceAction):
         return ActionResult(success=True, output=result if isinstance(result, dict) else {"result": result})
 
 
+class ProcessDocumentAction(_ServiceAction):
+    action_key = "process_document"
+    display_name = "Process Document"
+    description = "Hujjatni Document Intelligence pipeline orqali qayta ishlaydi (navbatga qo'yadi)"
+    category = "documents"
+
+    async def validate(self, context: ActionContext) -> None:
+        if not (context.config.get("document_id") or context.payload.get("document_id")):
+            raise ValidationException(detail="process_document uchun document_id talab qilinadi")
+
+    async def execute(self, context: ActionContext) -> ActionResult:
+        from app.workers.document_worker import enqueue_document_processing
+
+        document_id = str(context.config.get("document_id") or context.payload.get("document_id"))
+        svc = self._svc(context, "document_intelligence_service")
+        try:
+            await svc.assert_document_exists(context.company_id, document_id)
+        except Exception as exc:
+            return ActionResult(
+                success=False,
+                message=f"Document topilmadi yoki kompaniyaga tegishli emas: {exc}",
+                should_stop=True,
+            )
+        mode = enqueue_document_processing(document_id)
+        return ActionResult(
+            success=True,
+            output={"document_id": document_id, "queue_mode": mode},
+            message="Document processing queued",
+        )
+
+
+class IntelligenceSearchAction(_ServiceAction):
+    action_key = "intelligence_search"
+    display_name = "Intelligence Search"
+    description = "Hujjatlar bo'yicha semantik + matnli qidiruv (entities, graph, citations bilan)"
+    category = "documents"
+
+    async def validate(self, context: ActionContext) -> None:
+        if not (context.config.get("query") or context.payload.get("query")):
+            raise ValidationException(detail="intelligence_search uchun query talab qilinadi")
+
+    async def execute(self, context: ActionContext) -> ActionResult:
+        svc = self._svc(context, "document_intelligence_service")
+        query = context.config.get("query") or context.payload.get("query")
+        top_k = int(context.config.get("top_k") or 5)
+        result = await svc.search(context.company_id, query=query, top_k=top_k)
+        return ActionResult(success=True, output=result, message="Intelligence search complete")
+
+
+class ReindexDocumentAction(_ServiceAction):
+    action_key = "reindex_document"
+    display_name = "Reindex Document"
+    description = "Hujjat chunklarining embeddinglarini yangi model/versiya bilan qayta yaratadi"
+    category = "documents"
+
+    async def validate(self, context: ActionContext) -> None:
+        if not (context.config.get("document_id") or context.payload.get("document_id")):
+            raise ValidationException(detail="reindex_document uchun document_id talab qilinadi")
+
+    async def execute(self, context: ActionContext) -> ActionResult:
+        svc = self._svc(context, "document_intelligence_service")
+        document_id = uuid.UUID(str(context.config.get("document_id") or context.payload.get("document_id")))
+        result = await svc.reindex_document(context.company_id, document_id)
+        return ActionResult(success=True, output=result, message="Document reindexed")
+
+
+class ExecuteIntegrationAction(_ServiceAction):
+    action_key = "execute_integration"
+    display_name = "Execute Enterprise Integration Action"
+    description = "Integration Hub orqali korxona integratsiyasida (Google, Microsoft, Telegram, Slack, Jira, GitHub, ERP) amal bajarish"
+    category = "integrations"
+
+    async def validate(self, context: ActionContext) -> None:
+        if not (context.config.get("integration_id") or context.payload.get("integration_id")):
+            raise ValidationException(detail="execute_integration uchun integration_id talab qilinadi")
+        if not (context.config.get("action_name") or context.payload.get("action_name")):
+            raise ValidationException(detail="execute_integration uchun action_name talab qilinadi")
+
+    async def execute(self, context: ActionContext) -> ActionResult:
+        from app.services.integration_service import IntegrationService
+
+        db = self._svc(context, "db")
+        integration_id_str = context.config.get("integration_id") or context.payload.get("integration_id")
+        action_name = context.config.get("action_name") or context.payload.get("action_name")
+        params = context.config.get("params") or context.payload.get("params") or {}
+        data = context.config.get("data") or context.payload.get("data") or {}
+
+        svc = IntegrationService(db)
+        res = await svc.execute_action(
+            integration_id=uuid.UUID(str(integration_id_str)),
+            company_id=context.company_id,
+            action_name=action_name,
+            params=params,
+            data=data,
+            triggered_by_type="workflow",
+            triggered_by_id=context.user_id,
+        )
+
+        return ActionResult(
+            success=res.success,
+            output=res.data,
+            message=res.message or "Integration action executed",
+            error=res.error,
+        )
+
+
+class CalculateKPIsAction(_ServiceAction):
+    action_key = "calculate_kpis"
+    display_name = "Calculate Company KPIs"
+    description = "Kompaniyaning barcha yoki tanlangan KPI ko'rsatkichlarini qayta hisoblaydi"
+    category = "analytics"
+
+    async def validate(self, context: ActionContext) -> None:
+        return None
+
+    async def execute(self, context: ActionContext) -> ActionResult:
+        from app.services.bi_service import BusinessIntelligenceService
+
+        db = self._svc(context, "db")
+        svc = BusinessIntelligenceService(db)
+        kpi_codes = context.config.get("kpi_codes") or context.payload.get("kpi_codes")
+        res = await svc.calculate_kpis(context.company_id, kpi_codes=kpi_codes)
+        return ActionResult(
+            success=True,
+            output=[{"code": r.code, "value": r.current_value, "status": r.status} for r in res],
+            message=f"{len(res)} ta KPI hisoblandi",
+        )
+
+
+class GenerateInsightsAction(_ServiceAction):
+    action_key = "generate_insights"
+    display_name = "Generate Business Insights"
+    description = "AI orqali avtomatik tahliliy xulosalar (insights) va sabablarni shakllantiradi"
+    category = "analytics"
+
+    async def validate(self, context: ActionContext) -> None:
+        return None
+
+    async def execute(self, context: ActionContext) -> ActionResult:
+        from app.services.bi_service import BusinessIntelligenceService
+
+        db = self._svc(context, "db")
+        svc = BusinessIntelligenceService(db)
+        insights = await svc.generate_insights(context.company_id, force_refresh=True)
+        return ActionResult(
+            success=True,
+            output=[{"title": i.title, "severity": i.severity, "summary": i.summary} for i in insights],
+            message=f"{len(insights)} ta insight yaratildi",
+        )
+
+
+class EvaluateAlertRulesAction(_ServiceAction):
+    action_key = "evaluate_alert_rules"
+    display_name = "Evaluate Alert Rules"
+    description = "Kompaniya ogohlantirish qoidalarini tekshiradi va chegara buzilganda alert hosil qiladi"
+    category = "monitoring"
+
+    async def validate(self, context: ActionContext) -> None:
+        return None
+
+    async def execute(self, context: ActionContext) -> ActionResult:
+        from app.services.bi_service import BusinessIntelligenceService
+
+        db = self._svc(context, "db")
+        svc = BusinessIntelligenceService(db)
+        alerts = await svc.evaluate_alerts(context.company_id)
+        return ActionResult(
+            success=True,
+            output=[{"title": a.title, "severity": a.severity, "message": a.message} for a in alerts],
+            message=f"{len(alerts)} ta ogohlantirish qayd etildi",
+        )
+
+
+class GenerateExecutiveSummaryAction(_ServiceAction):
+    action_key = "generate_executive_summary"
+    display_name = "Generate Executive Summary"
+    description = "Rahbariyat uchun qisqa va aniq ijroiy sharh yaratadi"
+    category = "reports"
+
+    async def validate(self, context: ActionContext) -> None:
+        return None
+
+    async def execute(self, context: ActionContext) -> ActionResult:
+        from app.services.bi_service import BusinessIntelligenceService
+
+        db = self._svc(context, "db")
+        svc = BusinessIntelligenceService(db)
+        role = context.config.get("target_role") or context.payload.get("target_role") or "CEO"
+        timeframe = context.config.get("timeframe") or context.payload.get("timeframe") or "current_month"
+        summary = await svc.generate_executive_summary(context.company_id, target_role=role, timeframe=timeframe)
+        return ActionResult(
+            success=True,
+            output=summary,
+            message="Executive summary generated successfully",
+        )
+
+
+class GenerateBIReportAction(_ServiceAction):
+    action_key = "generate_bi_report"
+    display_name = "Generate BI Report"
+    description = "To'liq biznes hisobotini (Markdown/JSON) yaratadi va bazaga saqlaydi"
+    category = "reports"
+
+    async def validate(self, context: ActionContext) -> None:
+        return None
+
+    async def execute(self, context: ActionContext) -> ActionResult:
+        from app.services.bi_service import BusinessIntelligenceService
+
+        db = self._svc(context, "db")
+        svc = BusinessIntelligenceService(db)
+        title = context.config.get("title") or context.payload.get("title") or "Oylik Tahliliy Hisobot"
+        timeframe = context.config.get("timeframe") or context.payload.get("timeframe") or "current_month"
+        fmt = context.config.get("format") or context.payload.get("format") or "markdown"
+
+        report = await svc.generate_bi_report(
+            company_id=context.company_id,
+            user_id=context.user_id,
+            title=title,
+            timeframe=timeframe,
+            format=fmt,
+        )
+        return ActionResult(
+            success=True,
+            output={"report_id": str(report.id), "title": report.title, "format": report.format},
+            message=f"Report '{report.title}' successfully generated",
+        )
+
+
 DEFAULT_ACTIONS: list[BaseAction] = [
     ReadDocumentsAction(),
     AnalyzeExcelAction(),
@@ -598,4 +827,15 @@ DEFAULT_ACTIONS: list[BaseAction] = [
     GenerateEmbeddingsAction(),
     RequestApprovalAction(),
     FuturePluginAction(),
+    ExecuteIntegrationAction(),
+    ProcessDocumentAction(),
+    IntelligenceSearchAction(),
+    ReindexDocumentAction(),
+    CalculateKPIsAction(),
+    GenerateInsightsAction(),
+    EvaluateAlertRulesAction(),
+    GenerateExecutiveSummaryAction(),
+    GenerateBIReportAction(),
 ]
+
+

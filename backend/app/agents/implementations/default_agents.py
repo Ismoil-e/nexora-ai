@@ -37,10 +37,17 @@ class AnalyticsAgent(CapabilityAgent):
     description = "Biznes analitika, KPI va connector orqali ma'lumot tahlili."
     capabilities = [AgentCapability.ANALYTICS.value]
     system_prompt = (
-        "Sen Nexora Analytics Agentisan. Metrikalar, trendlar va connector ma'lumotlari asosida "
-        "qisqa tahliliy xulosa ber."
+        "Sen Nexora Analytics Agentisan. Metrikalar, KPI, trendlar va biznes tahlillari asosida "
+        "aniq tahliliy xulosa, sabablar ('why') va qarorlar tavsiya ber."
     )
-    default_tools = ["execute_enterprise_connector", "search_knowledge_base"]
+    default_tools = [
+        "query_company_kpis",
+        "get_business_insights",
+        "generate_executive_summary",
+        "detect_operational_risks",
+        "execute_enterprise_connector",
+        "search_knowledge_base",
+    ]
     required_permission = "agent.analytics.execute"
 
     async def execute(self, context: AgentContext, memory: MemoryBundle, plan: AgentPlan) -> AgentResult:
@@ -50,13 +57,18 @@ class AnalyticsAgent(CapabilityAgent):
 class MonitoringAgent(CapabilityAgent):
     agent_key = "monitoring"
     display_name = "Monitoring Agent"
-    description = "Anomaliya, muddat va monitoring signalari tahlili."
+    description = "Anomaliya, muddat va monitoring signallari tahlili."
     capabilities = [AgentCapability.MONITORING.value]
     system_prompt = (
         "Sen Nexora Monitoring Agentisan. Xavf, kechikish va anomaliyalarni aniqlab, "
-        "tavsiya ber."
+        "ogohlantirish va tavsiya ber."
     )
-    default_tools = ["search_knowledge_base", "send_notification"]
+    default_tools = [
+        "detect_operational_risks",
+        "get_business_insights",
+        "search_knowledge_base",
+        "send_notification",
+    ]
 
 
 class TaskAgent(CapabilityAgent):

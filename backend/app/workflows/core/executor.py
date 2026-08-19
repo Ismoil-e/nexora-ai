@@ -46,12 +46,14 @@ class WorkflowExecutor:
         from app.cognitive.services.engines import MemoryEngine
         from app.services.agent_service import AgentService
         from app.services.ai_service import AIService
+        from app.services.document_intelligence_service import DocumentIntelligenceService
         from app.services.document_service import DocumentService
         from app.services.notification_service import NotificationService
 
         return {
             "db": self.db,
             "document_service": DocumentService(self.db),
+            "document_intelligence_service": DocumentIntelligenceService(self.db),
             "notification_service": NotificationService(self.db),
             "ai_service": AIService(self.db),
             "agent_service": AgentService(self.db),
