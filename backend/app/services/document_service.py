@@ -3,8 +3,10 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.document_repo import DocumentChunkRepository, DocumentRepository
+from app.security.core.file_security import file_security
 from app.storage.file_handler import FileHandler
 from app.storage.minio_client import MinioClient
+from app.utils.exceptions import ValidationException
 
 
 class DocumentService:
@@ -20,8 +22,17 @@ class DocumentService:
         from app.models.document import Document
         import os
 
-        ext = os.path.splitext(filename)[1].lower().lstrip(".")
+        # Enterprise Security: Validate file before processing
         file_size = len(file_content)
+        is_valid, error_msg = file_security.validate_upload(
+            filename=filename, file_size=file_size, mime_type=mime_type, file_content=file_content
+        )
+        if not is_valid:
+            raise ValidationException(f"Fayl xavfsizlik tekshiruvidan o'tmadi: {error_msg}")
+
+        # Sanitize filename
+        safe_filename = file_security.sanitize_filename(filename)
+        ext = os.path.splitext(safe_filename)[1].lower().lstrip(".")
 
         stored_path = await self.minio.upload_file(
             bucket="nexora-documents",
@@ -123,8 +134,15 @@ class DocumentService:
             "message": "Hujjat qayta ishlashga navbatga qo'yildi",
         }
 
-    async def get_documents(self, company_id: uuid.UUID, page: int = 1, page_size: int = 20) -> dict:
+    async def get_documents(self, company_id: uuid.UUID, page: int = 1, page_size: int = 20,
+                             security_ctx=None) -> dict:
         docs, total = await self.doc_repo.get_by_company(company_id, page, page_size)
+
+        # Enterprise Security: Filter by document-level permissions
+        if security_ctx:
+            from app.security.core.document_permissions import document_permissions
+            docs = document_permissions.filter_documents_by_access(security_ctx, docs)
+
         return {
             "total": total,
             "page": page,
@@ -138,6 +156,8 @@ class DocumentService:
                 "category": d.category,
                 "status": d.status,
                 "page_count": d.page_count,
+                "sensitivity_level": d.sensitivity_level,
+                "access_level": d.access_level,
                 "created_at": d.created_at.isoformat(),
                 "uploaded_by": str(d.uploaded_by),
             } for d in docs],
@@ -153,7 +173,8 @@ class DocumentService:
         return True
 
     async def search_rag(self, company_id: uuid.UUID, query: str,
-                          document_ids: list[uuid.UUID] | None = None, top_k: int = 5) -> dict:
+                          document_ids: list[uuid.UUID] | None = None, top_k: int = 5,
+                          security_ctx=None) -> dict:
         from app.services.ai_service import AIService
 
         ai_service = AIService(self.db)
@@ -163,11 +184,29 @@ class DocumentService:
             query_text=query,
             embedding=query_embedding,
             company_id=company_id,
-            top_k=top_k,
+            top_k=top_k * 3,  # Fetch more to filter
         )
 
         if document_ids:
             chunks = [c for c in chunks if str(c.document_id if hasattr(c, "document_id") else c["document_id"]) in [str(d) for d in document_ids]]
+
+        # Enterprise Security: Filter chunks by document permissions
+        if security_ctx and chunks:
+            from app.security.core.document_permissions import document_permissions
+            from app.models.document import Document
+
+            allowed_doc_ids = set()
+            for chunk in chunks:
+                doc_id = chunk.document_id if hasattr(chunk, "document_id") else chunk.get("document_id")
+                if doc_id and doc_id not in allowed_doc_ids:
+                    doc = await self.db.get(Document, doc_id)
+                    if doc:
+                        result = document_permissions.check_document_access(security_ctx, doc)
+                        if result.effect.value == "ALLOW":
+                            allowed_doc_ids.add(doc_id)
+            chunks = [c for c in chunks if (c.document_id if hasattr(c, "document_id") else c.get("document_id")) in allowed_doc_ids]
+
+        chunks = chunks[:top_k]
 
         context = "\n\n".join([c.content if hasattr(c, "content") else c["content"] for c in chunks])
 

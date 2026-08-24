@@ -45,6 +45,25 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+from fastapi.middleware.cors import CORSMiddleware
+from app.core.config import settings
+
+
 def register_middleware(app: FastAPI):
+    # CORS configuration
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        allow_headers=["*"],
+        expose_headers=["X-Request-ID", "X-Response-Time-Ms", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
+        max_age=600,
+    )
+
+    # Rate limiting (must be before other middleware)
+    from app.security.core.rate_limiter import RateLimitMiddleware
+    app.add_middleware(RateLimitMiddleware)
+
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestIDMiddleware)

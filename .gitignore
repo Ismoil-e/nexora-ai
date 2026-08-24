@@ -1,5 +1,7 @@
 node_modules/
 .env
+.env.local
+.env.*.local
 .DS_Store
 __MACOSX/
 *.pyc
@@ -14,3 +16,27 @@ backend/*.db
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Docker
+nginx/ssl/*.pem
+nginx/ssl/*.key
+
+# Backups
+backups/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Next.js
+.next/
+out/
+
+# OS
+Thumbs.db

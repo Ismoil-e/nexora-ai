@@ -1,0 +1,95 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: nexora-production
+
+resources:
+  - ../../base/namespace.yml
+  - ../../base/backend.yml
+  - ../../base/frontend.yml
+  - ../../base/worker.yml
+  - ../../base/ingress.yml
+
+patches:
+  - target:
+      kind: Deployment
+      name: nexora-backend
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 500m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 512Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 2000m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 2Gi
+
+  - target:
+      kind: Deployment
+      name: nexora-frontend
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+
+  - target:
+      kind: Deployment
+      name: nexora-worker
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 500m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 2Gi
+
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: nexora-backend-hpa
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 20
+
+  - target:
+      kind: Ingress
+      name: nexora-ingress
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: nexora.ai
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: nexora.ai
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: nexora-tls
+
+configMapGenerator:
+  - name: nexora-config
+    behavior: merge
+    literals:
+      - APP_ENV=production
+      - DEBUG=false
+      - LOG_LEVEL=WARNING
+
+secretGenerator:
+  - name: nexora-secrets
+    behavior: merge
+    literals:
+      - SECRET_KEY=production-secret-key-replace-me
+      - DATABASE_URL=postgresql+asyncpg://nexora:CHANGE_ME@nexora-postgres:5432/nexora_db
+      - REDIS_URL=redis://nexora-redis:6379/0

@@ -1,0 +1,87 @@
+---
+# Celery Worker Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexora-worker
+  namespace: nexora-ai
+  labels:
+    app: nexora-worker
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexora-worker
+  template:
+    metadata:
+      labels:
+        app: nexora-worker
+        component: worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/ismoil-e/nexora-ai-backend:latest
+          command:
+            - celery
+            - -A
+            - app.workers.celery_app
+            - worker
+            - --loglevel=info
+            - --concurrency=4
+            - --max-tasks-per-child=100
+          envFrom:
+            - secretRef:
+                name: nexora-secrets
+            - configMapRef:
+                name: nexora-config
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+
+---
+# Celery Beat Scheduler (single replica)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexora-scheduler
+  namespace: nexora-ai
+  labels:
+    app: nexora-scheduler
+    component: scheduler
+spec:
+  replicas: 1  # Single replica to prevent duplicate scheduled tasks
+  selector:
+    matchLabels:
+      app: nexora-scheduler
+  template:
+    metadata:
+      labels:
+        app: nexora-scheduler
+        component: scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: ghcr.io/ismoil-e/nexora-ai-backend:latest
+          command:
+            - celery
+            - -A
+            - app.workers.celery_app
+            - beat
+            - --loglevel=info
+          envFrom:
+            - secretRef:
+                name: nexora-secrets
+            - configMapRef:
+                name: nexora-config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

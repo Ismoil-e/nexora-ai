@@ -51,6 +51,14 @@ class Document(BaseModel):
     embedding_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     embedding_dimensions: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Enterprise Security: Document-level classification and access control
+    sensitivity_level: Mapped[str] = mapped_column(String(32), default="INTERNAL", nullable=False, index=True)
+    access_level: Mapped[str] = mapped_column(String(32), default="owner", nullable=False)  # owner, team, department, company, restricted
+    allowed_user_ids: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of user UUIDs for restricted docs
+    classification_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_accessed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_accessed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
     company = relationship("Company", back_populates="documents")
     uploaded_by_user = relationship("User", back_populates="documents")
     chunks = relationship("DocumentChunk", back_populates="document", lazy="selectin", cascade="all, delete-orphan")

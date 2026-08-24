@@ -1,0 +1,68 @@
+---
+# Ingress with TLS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nexora-ingress
+  namespace: nexora-ai
+  labels:
+    app: nexora-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - nexora.ai
+        - www.nexora.ai
+      secretName: nexora-tls
+  rules:
+    - host: nexora.ai
+      http:
+        paths:
+          # API routes → backend
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: nexora-backend
+                port:
+                  number: 8000
+          # Docs routes → backend
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: nexora-backend
+                port:
+                  number: 8000
+          - path: /redoc
+            pathType: Prefix
+            backend:
+              service:
+                name: nexora-backend
+                port:
+                  number: 8000
+          # All other routes → frontend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nexora-frontend
+                port:
+                  number: 3000
+    - host: www.nexora.ai
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nexora-frontend
+                port:
+                  number: 3000

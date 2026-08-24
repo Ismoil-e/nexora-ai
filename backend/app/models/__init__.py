@@ -57,6 +57,15 @@ from app.models.bi import (
     BIAlert,
     AnalyticsSnapshot,
 )
+from app.models.security import (
+    MFAConfiguration,
+    MFARecoveryCode,
+    SecurityEvent,
+    SecurityPolicy,
+    BreakGlassSession,
+    DataRetentionPolicy,
+    AIUsageAuditLog,
+)
 
 __all__ = [
     "BaseModel",
@@ -106,6 +115,13 @@ __all__ = [
     "BIAlertRule",
     "BIAlert",
     "AnalyticsSnapshot",
+    "MFAConfiguration",
+    "MFARecoveryCode",
+    "SecurityEvent",
+    "SecurityPolicy",
+    "BreakGlassSession",
+    "DataRetentionPolicy",
+    "AIUsageAuditLog",
 ]
 
 

@@ -1,0 +1,108 @@
+---
+# Backend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexora-backend
+  namespace: nexora-ai
+  labels:
+    app: nexora-backend
+    component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexora-backend
+  template:
+    metadata:
+      labels:
+        app: nexora-backend
+        component: api
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/ismoil-e/nexora-ai-backend:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: nexora-secrets
+            - configMapRef:
+                name: nexora-config
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+      terminationGracePeriodSeconds: 60
+
+---
+# Backend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexora-backend
+  namespace: nexora-ai
+  labels:
+    app: nexora-backend
+spec:
+  selector:
+    app: nexora-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP
+
+---
+# Backend HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nexora-backend-hpa
+  namespace: nexora-ai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nexora-backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

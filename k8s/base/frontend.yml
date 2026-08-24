@@ -1,0 +1,70 @@
+---
+# Frontend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexora-frontend
+  namespace: nexora-ai
+  labels:
+    app: nexora-frontend
+    component: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexora-frontend
+  template:
+    metadata:
+      labels:
+        app: nexora-frontend
+        component: web
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/ismoil-e/nexora-ai-frontend:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://nexora-backend:8000/api/v1"
+            - name: NEXT_PUBLIC_APP_URL
+              value: "https://nexora.ai"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+
+---
+# Frontend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexora-frontend
+  namespace: nexora-ai
+  labels:
+    app: nexora-frontend
+spec:
+  selector:
+    app: nexora-frontend
+  ports:
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP
+  type: ClusterIP

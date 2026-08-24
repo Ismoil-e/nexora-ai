@@ -11,8 +11,10 @@ from app.api.v1 import (
     companies,
     dashboard,
     documents,
+    health,
     integrations,
     notifications,
+    orchestrator,
     reports,
     roles,
     settings,
@@ -25,6 +27,8 @@ from app.core.config import settings as app_settings
 from app.core.database import close_db, init_db
 from app.core.logging import get_logger, setup_logging
 from app.core.middleware import register_middleware
+from app.core.metrics_middleware import MetricsMiddleware
+from app.core.metrics import get_metrics, get_metrics_content_type
 
 setup_logging()
 logger = get_logger(__name__)
@@ -44,6 +48,9 @@ def create_app() -> FastAPI:
     )
 
     register_middleware(app)
+
+    # Metrics middleware
+    app.add_middleware(MetricsMiddleware)
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
@@ -87,19 +94,38 @@ def create_app() -> FastAPI:
     app.include_router(bi.router, prefix=api_v1_prefix)
     app.include_router(roles.router, prefix=api_v1_prefix)
     app.include_router(settings.router, prefix=api_v1_prefix)
+    app.include_router(orchestrator.router, prefix=api_v1_prefix)
+    app.include_router(health.router)
 
-    @app.get("/api/health")
-    async def health():
-        return {"status": "ok", "service": app_settings.app_name, "version": app_settings.app_version}
+    # Note: /api/health endpoints are registered via the health router above
+
+    # Prometheus metrics endpoint
+    @app.get("/metrics")
+    async def metrics():
+        from fastapi.responses import Response
+        return Response(content=get_metrics(), media_type=get_metrics_content_type())
 
     @app.post("/api/chat")
     async def chat_proxy(request: Request):
         from app.services.ai_service import AIService
         from app.core.database import async_session_factory
+        from app.core.security import decode_token
+        import uuid as _uuid
 
         body = await request.json()
         user_text = body.get("message", "")
         history = body.get("history", [])
+
+        # Extract user context from token if available
+        company_id = None
+        user_id = None
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            payload = decode_token(auth_header.split(" ")[1])
+            if payload and "sub" in payload:
+                user_id = _uuid.UUID(payload["sub"])
+                if "company_id" in payload:
+                    company_id = _uuid.UUID(payload["company_id"])
 
         system_prompt = "Sen Nexora AI yordamchisisan. Foydalanuvchilarga yordam berish uchun o'zbek tilida javob ber."
 
@@ -111,7 +137,7 @@ def create_app() -> FastAPI:
         messages.append({"role": "user", "content": user_text})
 
         async with async_session_factory() as session:
-            service = AIService(db=session)
+            service = AIService(db=session, company_id=company_id, user_id=user_id)
             result = await service.chat(messages=messages, system_prompt=system_prompt)
 
         return {"reply": result["content"]}
