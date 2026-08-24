@@ -141,12 +141,12 @@ services:
       - nexora-internal
     deploy:
       resources:
-      limits:
-        cpus: "2.0"
-        memory: 2G
-      reservations:
-        cpus: "0.5"
-        memory: 512M
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
 
   # ---------------------------------------------------------------------------
   # Celery Worker — Document & Integration queue
