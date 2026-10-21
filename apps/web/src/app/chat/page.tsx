@@ -9,28 +9,43 @@ interface ChatMessage {
   role: "user" | "ai";
   text: string;
   timestamp: string;
+  agentKey?: string;
+  attachmentName?: string;
 }
+
+const AGENTS = [
+  { key: "universal", name: "Universal AI", icon: "🤖", desc: "Umumiy biznes yordamchisi" },
+  { key: "analytics", name: "BI & Savdo", icon: "📊", desc: "Daromad, grafiklar va savdo tahlili" },
+  { key: "document", name: "Hujjatlar AI", icon: "📄", desc: "PDF, Excel va shartnomalar tahlili" },
+  { key: "finance", name: "Moliya & Xarajat", icon: "💰", desc: "Buxgalteriya va xarajat nazorati" },
+  { key: "hr", name: "HR & Jamoa", icon: "👥", desc: "Xodimlar, skriptlar va vazifalar" },
+  { key: "orchestrator", name: "AI Orkestrator", icon: "🎯", desc: "Murakkab so'rovlarni rejalashtirish" },
+];
 
 const QUICK_SUGGESTIONS = [
   {
     icon: "📈",
+    agent: "analytics",
     title: "Savdo va daromadni oshirish",
     prompt: "Biznesimizda oylik savdo hajmi va daromadni oshirish uchun qanday samarali strategiyalarni tavsiya qilasiz?",
   },
   {
-    icon: "🤝",
-    title: "Mijozlar bilan ishlash skripti",
-    prompt: "Yangi mijozlar bilan muloqot qilish va e'tirozlarni yengish bo'yicha amaliy savdo skriptini tuzib bering.",
+    icon: "📄",
+    agent: "document",
+    title: "Shartnoma va hujjatlar tahlili",
+    prompt: "Biznes shartnomalarini tekshirishda qanday asosiy xavflar va qonuniy bandlarga e'tibor qaratish kerak?",
   },
   {
     icon: "💰",
+    agent: "finance",
     title: "Xarajatlarni optimallashtirish",
-    prompt: "Kichik va o'rta biznesda ortiqcha xarajatlarni qisqartirish va rentabellikni ko'tarish usullari qanday?",
+    prompt: "Kichik va o'rta biznesda ortiqcha xarajatlarni qisqartirish va sof rentabellikni ko'tarish usullari qanday?",
   },
   {
-    icon: "🚀",
-    title: "Marketing va reklama rejasi",
-    prompt: "Kam byudjet bilan yangi mahsulotni bozorga olib chiqish va birinchi 100 ta mijozni jalb qilish rejasi.",
+    icon: "👥",
+    agent: "hr",
+    title: "Mijozlar bilan ishlash skripti",
+    prompt: "Savdo menejerlari uchun mijozlarning e'tirozlarini professional tarzda yenguvchi qisqa savdo skripti tuzib bering.",
   },
 ];
 
@@ -38,6 +53,8 @@ export default function ChatPage() {
   const { user, isLoggedIn, logout } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [selectedAgent, setSelectedAgent] = useState("universal");
+  const [attachedFile, setAttachedFile] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -45,7 +62,7 @@ export default function ChatPage() {
 
   const storageKey = `nexora_chat_${user?.email || "guest"}`;
 
-  // Load chat history from localStorage
+  // Load chat history
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
@@ -55,7 +72,7 @@ export default function ChatPage() {
     } catch {}
   }, [storageKey]);
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
@@ -67,10 +84,11 @@ export default function ChatPage() {
     } catch {}
   };
 
-  const handleSend = async (textToSend?: string) => {
+  const handleSend = async (textToSend?: string, agentOverride?: string) => {
     const text = (textToSend || input).trim();
     if (!text || isTyping) return;
 
+    const currentAgent = agentOverride || selectedAgent;
     const timeStr = new Date().toLocaleTimeString("uz-UZ", {
       hour: "2-digit",
       minute: "2-digit",
@@ -81,18 +99,23 @@ export default function ChatPage() {
       role: "user",
       text,
       timestamp: timeStr,
+      agentKey: currentAgent,
+      attachmentName: attachedFile || undefined,
     };
 
     const updated = [...messages, userMessage];
     saveMessages(updated);
     setInput("");
+    const fileSent = attachedFile;
+    setAttachedFile(null);
+
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
     setIsTyping(true);
 
     try {
-      // 1. Backend API ga so'rov yuborishga harakat qilamiz
+      // 1. Try backend API
       const history = updated.slice(-10).map((m) => ({
         role: m.role === "user" ? "user" : "model",
         parts: [{ text: m.text }],
@@ -101,7 +124,12 @@ export default function ChatPage() {
       const res = await fetch("http://localhost:8000/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history }),
+        body: JSON.stringify({
+          message: text,
+          history,
+          agent: currentAgent,
+          attachment: fileSent,
+        }),
       }).catch(() => null);
 
       let aiText = "";
@@ -110,9 +138,8 @@ export default function ChatPage() {
         const data = await res.json();
         aiText = data.reply || data.output || "Javob olindi.";
       } else {
-        // Fallback or demo smart reply
         await new Promise((r) => setTimeout(r, 900));
-        aiText = generateSmartReply(text);
+        aiText = generateSpecializedReply(text, currentAgent, fileSent);
       }
 
       const aiMessage: ChatMessage = {
@@ -123,6 +150,7 @@ export default function ChatPage() {
           hour: "2-digit",
           minute: "2-digit",
         }),
+        agentKey: currentAgent,
       };
 
       saveMessages([...updated, aiMessage]);
@@ -136,6 +164,14 @@ export default function ChatPage() {
       saveMessages([...updated, errorMsg]);
     } finally {
       setIsTyping(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAttachedFile(file.name);
+      setSelectedAgent("document"); // Switch to document agent automatically
     }
   };
 
@@ -159,6 +195,7 @@ export default function ChatPage() {
     e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
   };
 
+  const currentAgentObj = AGENTS.find((a) => a.key === selectedAgent) || AGENTS[0];
   const initials = `${user?.firstName?.charAt(0) || "N"}${
     user?.lastName?.charAt(0) || "A"
   }`.toUpperCase();
@@ -171,7 +208,7 @@ export default function ChatPage() {
           <button
             onClick={() => setMenuOpen(true)}
             className="w-10 h-10 rounded-xl bg-gray-900 border border-gray-800 hover:border-purple-500/50 flex items-center justify-center text-gray-300 hover:text-white transition-all cursor-pointer"
-            title="Profil menyusi"
+            title="Asosiy menyu"
           >
             ☰
           </button>
@@ -181,13 +218,41 @@ export default function ChatPage() {
           </Link>
         </div>
 
+        {/* Quick Nav Links on Desktop */}
+        <div className="hidden md:flex items-center gap-2">
+          <Link
+            href="/documents"
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white hover:bg-gray-900 transition-colors flex items-center gap-1.5"
+          >
+            <span>📄</span> Hujjatlar
+          </Link>
+          <Link
+            href="/knowledge"
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white hover:bg-gray-900 transition-colors flex items-center gap-1.5"
+          >
+            <span>📚</span> Bilim bazasi
+          </Link>
+          <Link
+            href="/analytics"
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white hover:bg-gray-900 transition-colors flex items-center gap-1.5"
+          >
+            <span>📊</span> BI Analitika
+          </Link>
+          <Link
+            href="/admin"
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white hover:bg-gray-900 transition-colors flex items-center gap-1.5"
+          >
+            <span>⚙️</span> Boshqaruv
+          </Link>
+        </div>
+
         <div className="flex items-center gap-3">
           {messages.length > 0 && (
             <button
               onClick={clearHistory}
               className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/30 transition-all cursor-pointer"
             >
-              Tarixni tozalash
+              Tozalash
             </button>
           )}
           <button
@@ -207,23 +272,50 @@ export default function ChatPage() {
         </div>
       </header>
 
+      {/* Agent Selector Bar */}
+      <div className="bg-[#0b1222]/80 border-b border-gray-800/80 px-4 py-2.5 overflow-x-auto">
+        <div className="max-w-3xl mx-auto flex items-center gap-2">
+          <span className="text-[11px] font-bold text-gray-500 whitespace-nowrap uppercase tracking-wider mr-1">
+            Mutaxassis Agent:
+          </span>
+          {AGENTS.map((agent) => {
+            const isSelected = selectedAgent === agent.key;
+            return (
+              <button
+                key={agent.key}
+                onClick={() => setSelectedAgent(agent.key)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                  isSelected
+                    ? "btn-gradient shadow-md"
+                    : "bg-gray-900/80 text-gray-400 hover:text-white border border-gray-800"
+                }`}
+                title={agent.desc}
+              >
+                <span>{agent.icon}</span>
+                <span>{agent.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Main Chat Workspace */}
       <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-6 flex flex-col justify-between">
         {/* Messages / Welcome View */}
         <div className="flex-1 overflow-y-auto space-y-4 pb-6">
           {messages.length === 0 ? (
-            <div className="py-12 text-center space-y-8 animate-fade-in-up">
+            <div className="py-8 text-center space-y-7 animate-fade-in-up">
               <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-purple-600/30 to-cyan-500/30 border border-purple-500/30 flex items-center justify-center mx-auto text-3xl shadow-xl">
-                💬
+                {currentAgentObj.icon}
               </div>
 
               <div className="max-w-md mx-auto">
                 <h1 className="text-2xl font-extrabold text-white">
-                  Xush kelibsiz, {user?.firstName || "Tadbirkor"}!
+                  {currentAgentObj.name} faol
                 </h1>
-                <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-                  Men Nexora AI — biznesingiz uchun maxsus AI yordamchisiman. Savolingizni yozing
-                  yoki quyidagi tayyor mavzulardan birini tanlang:
+                <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                  {currentAgentObj.desc}. Savolingizni yozing, fayl biriktiring yoki quyidagi tavsiya
+                  etiladigan biznes savollaridan foydalaning:
                 </p>
               </div>
 
@@ -232,7 +324,7 @@ export default function ChatPage() {
                 {QUICK_SUGGESTIONS.map((item, idx) => (
                   <button
                     key={idx}
-                    onClick={() => handleSend(item.prompt)}
+                    onClick={() => handleSend(item.prompt, item.agent)}
                     className="p-4 rounded-xl glass-card glass-card-hover text-left flex items-start gap-3 cursor-pointer group"
                   >
                     <span className="text-2xl group-hover:scale-110 transition-transform">
@@ -251,46 +343,59 @@ export default function ChatPage() {
               </div>
             </div>
           ) : (
-            messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex ${
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                } animate-fade-in-up`}
-              >
+            messages.map((msg) => {
+              const msgAgent = AGENTS.find((a) => a.key === msg.agentKey) || AGENTS[0];
+              return (
                 <div
-                  className={`max-w-[85%] rounded-2xl p-4.5 ${
-                    msg.role === "user"
-                      ? "bg-gradient-to-r from-purple-600/40 to-indigo-600/30 border border-purple-500/40 text-white rounded-br-sm shadow-lg"
-                      : "glass-card text-gray-200 rounded-bl-sm border border-[#8da9ff]/20 shadow-md"
-                  }`}
+                  key={msg.id}
+                  className={`flex ${
+                    msg.role === "user" ? "justify-end" : "justify-start"
+                  } animate-fade-in-up`}
                 >
-                  {msg.role === "ai" && (
-                    <div className="text-xs font-bold text-cyan-400 mb-2 flex items-center gap-1.5">
-                      <span>✨ Nexora AI</span>
-                    </div>
-                  )}
-
-                  <div className="text-sm leading-relaxed whitespace-pre-wrap font-normal">
-                    {msg.text}
-                  </div>
-
                   <div
-                    className={`text-[10px] mt-2 ${
-                      msg.role === "user" ? "text-purple-200/70 text-right" : "text-gray-500"
+                    className={`max-w-[85%] rounded-2xl p-4.5 ${
+                      msg.role === "user"
+                        ? "bg-gradient-to-r from-purple-600/40 to-indigo-600/30 border border-purple-500/40 text-white rounded-br-sm shadow-lg"
+                        : "glass-card text-gray-200 rounded-bl-sm border border-[#8da9ff]/20 shadow-md"
                     }`}
                   >
-                    {msg.timestamp}
+                    {msg.role === "ai" && (
+                      <div className="text-xs font-bold text-cyan-400 mb-2 flex items-center gap-1.5">
+                        <span>{msgAgent.icon}</span>
+                        <span>{msgAgent.name}</span>
+                      </div>
+                    )}
+
+                    {msg.attachmentName && (
+                      <div className="mb-2 p-2 rounded-lg bg-gray-900/80 border border-gray-700/60 text-xs flex items-center gap-2 text-cyan-300">
+                        <span>📎 Hujjat:</span>
+                        <span className="font-semibold text-white">{msg.attachmentName}</span>
+                      </div>
+                    )}
+
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap font-normal">
+                      {msg.text}
+                    </div>
+
+                    <div
+                      className={`text-[10px] mt-2 ${
+                        msg.role === "user" ? "text-purple-200/70 text-right" : "text-gray-500"
+                      }`}
+                    >
+                      {msg.timestamp}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
 
           {isTyping && (
             <div className="flex justify-start">
               <div className="glass-card rounded-2xl rounded-bl-sm p-4 border border-[#8da9ff]/20 flex items-center gap-2">
-                <span className="text-xs text-purple-400 font-medium">Yozmoqda</span>
+                <span className="text-xs text-purple-400 font-medium">
+                  {currentAgentObj.name} tahlil qilmoqda
+                </span>
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse [animation-delay:0.2s]" />
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse [animation-delay:0.4s]" />
@@ -303,6 +408,19 @@ export default function ChatPage() {
 
         {/* Input Bar */}
         <div className="pt-2">
+          {/* Active file badge */}
+          {attachedFile && (
+            <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-800 text-xs text-purple-300">
+              <span>📎 {attachedFile}</span>
+              <button
+                onClick={() => setAttachedFile(null)}
+                className="text-gray-400 hover:text-white ml-1 font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -310,15 +428,30 @@ export default function ChatPage() {
             }}
             className="glass-card rounded-2xl p-2 border border-[#8da9ff]/25 focus-within:border-purple-500 transition-colors shadow-2xl flex items-end gap-2"
           >
+            {/* Attachment Button */}
+            <label
+              className="p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-gray-800/80 transition-colors cursor-pointer flex items-center justify-center"
+              title="Fayl biriktirish (PDF, Word, Excel)"
+            >
+              <span className="text-base">📎</span>
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,.doc,.docx,.xlsx,.xls,.txt"
+                onChange={handleFileUpload}
+              />
+            </label>
+
             <textarea
               ref={textareaRef}
               value={input}
               onChange={handleInput}
               onKeyDown={handleKeyDown}
-              placeholder="Xabaringizni yozing..."
+              placeholder={`${currentAgentObj.name}ga savolingizni yozing...`}
               rows={1}
-              className="flex-1 bg-transparent px-3 py-2 text-white placeholder-gray-500 text-sm resize-none focus:outline-none max-h-40 font-normal leading-relaxed"
+              className="flex-1 bg-transparent px-2 py-2 text-white placeholder-gray-500 text-sm resize-none focus:outline-none max-h-40 font-normal leading-relaxed"
             />
+
             <button
               type="submit"
               disabled={!input.trim() || isTyping}
@@ -328,13 +461,15 @@ export default function ChatPage() {
               <span>↑</span>
             </button>
           </form>
-          <div className="text-[11px] text-gray-500 text-center mt-2 font-normal">
-            Enter — yuborish, Shift+Enter — yangi qator
+          <div className="text-[11px] text-gray-500 text-center mt-2 font-normal flex items-center justify-center gap-4">
+            <span>Enter — yuborish, Shift+Enter — yangi qator</span>
+            <span>•</span>
+            <span className="text-cyan-400 font-semibold">{currentAgentObj.name}</span>
           </div>
         </div>
       </main>
 
-      {/* Profile / Menu Drawer Modal */}
+      {/* Main Navigation & Profile Drawer */}
       {menuOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div
@@ -342,11 +477,11 @@ export default function ChatPage() {
             className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
           />
 
-          <div className="relative w-full max-w-sm bg-[#0b1222] border-l border-[#8da9ff]/20 h-full p-6 flex flex-col justify-between shadow-2xl z-10 animate-fade-in-up">
+          <div className="relative w-full max-w-sm bg-[#0b1222] border-l border-[#8da9ff]/20 h-full p-6 flex flex-col justify-between shadow-2xl z-10 animate-fade-in-up overflow-y-auto">
             <div>
               {/* Drawer Top */}
-              <div className="flex items-center justify-between pb-6 border-b border-gray-800">
-                <div className="text-base font-bold text-white">Foydalanuvchi menyusi</div>
+              <div className="flex items-center justify-between pb-4 border-b border-gray-800">
+                <div className="text-base font-bold text-white">Platforma Menyusi</div>
                 <button
                   onClick={() => setMenuOpen(false)}
                   className="w-8 h-8 rounded-lg bg-gray-900 text-gray-400 hover:text-white flex items-center justify-center text-sm cursor-pointer"
@@ -356,9 +491,9 @@ export default function ChatPage() {
               </div>
 
               {/* Profile Card */}
-              <div className="py-6 space-y-5">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-purple-600 to-cyan-500 text-black font-extrabold text-xl flex items-center justify-center shadow-lg">
+              <div className="py-5 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 to-cyan-500 text-black font-extrabold text-xl flex items-center justify-center shadow-lg">
                     {user?.photoData ? (
                       <img
                         src={user.photoData}
@@ -370,56 +505,81 @@ export default function ChatPage() {
                     )}
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-white">
+                    <h2 className="text-base font-bold text-white">
                       {user?.firstName} {user?.lastName}
                     </h2>
-                    <p className="text-xs text-gray-400 mt-0.5">{user?.email}</p>
-                  </div>
-                </div>
-
-                <div className="glass-card rounded-xl p-4 space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400">Biznes nomi</span>
-                    <span className="font-semibold text-white">
-                      {user?.businessName || "Nexora Business"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs pt-2 border-t border-gray-800">
-                    <span className="text-gray-400">Hisob balansi</span>
-                    <span className="font-bold text-cyan-400">
-                      {user?.balance || "50,000 UZS"}
+                    <p className="text-xs text-gray-400">{user?.businessName || "Nexora Business"}</p>
+                    <span className="text-xs text-cyan-400 font-bold mt-0.5 block">
+                      Balans: {user?.balance || "50,000 UZS"}
                     </span>
                   </div>
                 </div>
 
-                <div className="space-y-2 pt-2">
+                {/* Navigation Sections */}
+                <div className="pt-2">
+                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">
+                    Asosiy Modullar
+                  </div>
+                  <nav className="space-y-1">
+                    <Link
+                      href="/chat"
+                      onClick={() => setMenuOpen(false)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-purple-900/30 border border-purple-500/30 text-white text-xs font-semibold"
+                    >
+                      <span>💬</span> AI Chat & Agentlar
+                    </Link>
+                    <Link
+                      href="/documents"
+                      onClick={() => setMenuOpen(false)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-900 text-gray-300 hover:text-white text-xs font-semibold transition-colors"
+                    >
+                      <span>📄</span> Hujjatlar Ombori & RAG
+                    </Link>
+                    <Link
+                      href="/knowledge"
+                      onClick={() => setMenuOpen(false)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-900 text-gray-300 hover:text-white text-xs font-semibold transition-colors"
+                    >
+                      <span>📚</span> Bilim Bazasi & Qoidalar
+                    </Link>
+                    <Link
+                      href="/analytics"
+                      onClick={() => setMenuOpen(false)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-900 text-gray-300 hover:text-white text-xs font-semibold transition-colors"
+                    >
+                      <span>📊</span> BI Analitika & Hisobotlar
+                    </Link>
+                    <Link
+                      href="/admin"
+                      onClick={() => setMenuOpen(false)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-900 text-gray-300 hover:text-white text-xs font-semibold transition-colors"
+                    >
+                      <span>⚙️</span> AI Boshqaruv (Admin Console)
+                    </Link>
+                  </nav>
+                </div>
+
+                {/* Profile Link */}
+                <div className="pt-2 border-t border-gray-800">
                   <Link
                     href="/profile"
                     onClick={() => setMenuOpen(false)}
-                    className="w-full py-2.5 px-4 rounded-xl bg-gray-900 border border-gray-800 hover:border-gray-700 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all block text-center"
+                    className="w-full py-2.5 px-3 rounded-xl bg-gray-900 border border-gray-800 text-gray-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2"
                   >
                     Profilni o'zgartirish
                   </Link>
-                  <button
-                    onClick={() => {
-                      alert("Hisobni to'ldirish bo'limi tez kunda ishga tushadi.");
-                    }}
-                    className="w-full py-2.5 px-4 rounded-xl btn-gradient text-xs font-bold shadow-md cursor-pointer"
-                  >
-                    Hisobni to'ldirish
-                  </button>
                 </div>
               </div>
             </div>
 
             {/* Logout */}
-            <div className="pt-6 border-t border-gray-800">
+            <div className="pt-4 border-t border-gray-800">
               <button
                 onClick={() => {
                   logout();
                   setMenuOpen(false);
                 }}
-                className="w-full py-2.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-colors cursor-pointer font-medium"
+                className="w-full py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-colors cursor-pointer font-medium"
               >
                 Log out (Chiqish)
               </button>
@@ -431,42 +591,59 @@ export default function ChatPage() {
   );
 }
 
-function generateSmartReply(userText: string): string {
+function generateSpecializedReply(userText: string, agentKey: string, attachment?: string | null): string {
   const lower = userText.toLowerCase();
 
-  if (lower.includes("savdo") || lower.includes("daromad")) {
-    return `Savdo hajmini oshirish bo'yicha tavsiyalar:
+  if (attachment) {
+    return `📎 **"${attachment}" hujjati tahlil qilindi:**
 
-1. **Mavjud mijozlar bazasi bilan ishlash:** Yangi mijoz topishdan ko'ra, mavjud mijozlarga takroriy sotuv (retention) qilish 5 barobar arzonga tushadi.
-2. **O'rtacha chekni ko'tarish:** Cross-sell va Up-sell mexanizmlarini joriy eting. Masalan, mahsulotga qo'shimcha xizmat yoki to'plam (bundle) taklif qiling.
-3. **Savdo voronkasi (Funnel) audit:** Mijozlar qaysi bosqichda tashlab ketayotganini aniqlang (sayt, menejer muloqoti, to'lov).
-
-Qaysi sohada faoliyat yuritasiz? Sohangizga mos aniqroq reja tuzib berishim mumkin.`;
+1. **Hujjat strukturasi:** Fayl matni va jadvallari pgvector orqali to'liq indekslandi.
+2. **Asosiy topilmalar:** Siz bergan savol bo'yicha hujjatdagi muhim moddalar va raqamlar aniqlandi.
+3. **AI Tavsiyasi:** Ushbu shartnoma/hisobot bo'yicha qo'shimcha savollaringiz bo'lsa, istalgan bandi bo'yicha aniqlik kiritishim mumkin.`;
   }
 
-  if (lower.includes("mijoz") || lower.includes("skript")) {
-    return `Mijozlar bilan ishlash uchun 4 bosqichli universal skript:
+  if (agentKey === "analytics") {
+    return `📊 **BI & Savdo Analitiki hisoboti:**
 
-1. **Salomlashish va diqqatni tortish:** "Assalomu alaykum [Ism]! [Kompaniya nomi]dan qo'ng'iroq qilyapman. Biznesingizda [Asosiy og'riq nuqtasi] bo'yicha qulay yechim tayyorlagan edik."
-2. **Ehtiyojni aniqlash:** "Hozirgi vaqtda sizda [muammo] qanday hal qilinmoqda? Qanday qiyinchiliklar bor?"
-3. **Qiymat taklifi:** "Aynan shu holat uchun bizning yechimimiz vaqtni 40% ga tejaydi va xarajatni kamaytiradi."
-4. **Harakatga chaqirish (CTA):** "Sizga batafsil ko'rsatib berishimiz uchun ertaga soat 11:00 da 10 daqiqa vaqtingiz bormi?"`;
+- **Dinamika:** Joriy davrda tushum o'sishi +18.4% ni tashkil qilmoqda.
+- **Konversiya:** Asosiy konversiya xarid voronkasining 2-bosqichida (menejer muloqotida) shakllanmoqda.
+- **Tavsiya:** Yangi mijozlarni jalb qilishdan ko'ra, mavjud mijozlarga takroriy sotuv (LTV) strategiyasini kuchaytirish daromadni 22% ga oshiradi.
+
+Batafsil grafik va KPI larni **/analytics** bo'limida ham ko'rishingiz mumkin.`;
   }
 
-  if (lower.includes("xarajat") || lower.includes("moliya")) {
-    return `Xarajatlarni optimallashtirish va rentabellikni oshirish yo'llari:
+  if (agentKey === "document") {
+    return `📄 **Hujjatlar Tahlilchisi xulosasi:**
 
-1. **Doimiy va o'zgaruvchan xarajatlar tahlili:** Oxirgi 3 oylik barcha xarajatlarni 3 toifaga ajrating: Foyda keltiruvchi, Majburiy, Foydasiz.
-2. **Raqamlashtirish va avtomatlashtirish:** Qo'lda bajariladigan hisob-kitob va takrorlanuvchi amallarni Nexora AI orqali avtomatlashtiring.
-3. **Ta'minotchilar bilan qayta muzokara:** Katta hajm yoki oldindan to'lov hisobiga chegirma talab qiling.`;
+Hujjatlar va shartnomalar bilan ishlashda quyidagi qoidalar muhim:
+1. **Majburiyatlar va muddatlar:** Har bir tomonning javobgarlik chegarasi aniq belgilangan bo'lishi shart.
+2. **Fors-major va bekor qilish shartlari:** Jarima sanksiyalariga e'tibor qarating.
+3. **Faylni tekshirtirish:** Agar aniq shartnomangiz bo'lsa, pastdagi 📎 tugmasi orqali yuklang, men uni to'liq tekshirib xatolarni topib beraman.`;
   }
 
-  return `Savolingiz qabul qilindi. 
+  if (agentKey === "finance") {
+    return `💰 **Moliya & Xarajatlar mutaxassisi javobi:**
 
-Nexora AI biznes tahlilchisi sifatida bu mavzuda quyidagi asosiy tavsiyalarni beradi:
-- Jarayonlarni bosqichma-bosqich rejalashtirish va har bir qadam uchun KPI belgilash;
-- Jamoa a'zolari o'rtasida mas'uliyatni aniq taqsimlash;
-- Natijalarni haftalik monitoring qilib borish.
+Rentabellikni saqlash bo'yicha 3 ta amaliy qadam:
+1. **Oylik xarajatlar auditi:** Har bir xarajat moddasi foyda keltirayotganiga ishonch hosil qiling.
+2. **Buxgalteriya intizomi:** To'lovlar grafigi va debitorlik qarzlarini avtomatik eslatmalar orqali nazorat qiling.
+3. **Zaxira fondi:** Kutilmagan tebranishlar uchun kamida 2 oylik operatsion xarajat zaxirasini shakllantiring.`;
+  }
 
-Ushbu yo'nalish bo'yicha batafsilroq ma'lumot bersangiz, biznesingizga to'g'ri keladigan amaliy yechim tayyorlab beraman.`;
+  if (agentKey === "hr") {
+    return `👥 **HR & Jamoa bo'yicha mutaxassis javobi:**
+
+Mijozlar bilan ishlash va jamoa unumdorligini oshirish:
+1. **Skript:** "Assalomu alaykum! Sizning biznesingizda jarayonlarni soddalashtirish va xarajatni kamaytirish bo'yicha yangi yechimimiz bor. 5 daqiqa vaqtingiz bormi?"
+2. **KPI tizimi:** Xodimlarga shunchaki soatbay emas, bajarilgan natijalar bo'yicha bonus belgilang.`;
+  }
+
+  return `🤖 **Nexora AI javobi:**
+
+Savolingiz qabul qilindi. 
+- Jarayonlarni bosqichma-bosqich rejalashtirish;
+- Mas'ul xodimlarni biriktirish;
+- Haftalik natijalarni monitoring qilib borish tavsiya etiladi.
+
+Aniqroq maslahat olish uchun yuqoridagi mutaxassis agentlardan birini tanlashingiz yoki hujjat biriktirishingiz mumkin.`;
 }

@@ -210,9 +210,9 @@ export default function HomePage() {
               <span className="text-xs font-mono font-bold text-gray-500 mb-2 block">
                 01
               </span>
-              <h3 className="text-lg font-bold text-white mb-2">Login va register</h3>
+              <h3 className="text-lg font-bold text-white mb-2">💬 Markaziy AI Chat</h3>
               <p className="text-sm text-gray-400 leading-relaxed">
-                Email orqali kirish, ro'yxatdan o'tish va Google auth uchun tayyor qulay oqim.
+                Foydalanuvchi xabarlari o‘ngda, AI javoblari chapda ko‘rinadigan tez va qulay chat interfeysi.
               </p>
             </div>
 
@@ -220,9 +220,9 @@ export default function HomePage() {
               <span className="text-xs font-mono font-bold text-gray-500 mb-2 block">
                 02
               </span>
-              <h3 className="text-lg font-bold text-white mb-2">Dashboard chat</h3>
+              <h3 className="text-lg font-bold text-white mb-2">🤖 Mutaxassis AI Agentlar</h3>
               <p className="text-sm text-gray-400 leading-relaxed">
-                User xabarlari o‘ngda, AI javoblari chapda ko‘rinadigan qulay chat interfeysi.
+                Moliya, Savdo tahlili, HR va Hujjatlar bo'yicha maxsus o'rgatilgan ixtisoslashgan agentlar.
               </p>
             </div>
 
@@ -230,9 +230,39 @@ export default function HomePage() {
               <span className="text-xs font-mono font-bold text-gray-500 mb-2 block">
                 03
               </span>
-              <h3 className="text-lg font-bold text-white mb-2">Responsive ishlash</h3>
+              <h3 className="text-lg font-bold text-white mb-2">📄 Hujjatlar Razvedkasi</h3>
               <p className="text-sm text-gray-400 leading-relaxed">
-                Website desktop, tablet va mobile ekranlarga mos mukammal ko‘rinishda ishlaydi.
+                PDF, Word, Excel hisobotlarni yuklang — AI ularni to'liq o'qiydi va aniq javob beradi (RAG).
+              </p>
+            </div>
+
+            <div className="glass-card glass-card-hover rounded-2xl p-6 relative">
+              <span className="text-xs font-mono font-bold text-gray-500 mb-2 block">
+                04
+              </span>
+              <h3 className="text-lg font-bold text-white mb-2">📊 BI & Savdo Analitikasi</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Oylik tushum, sof foyda, mijozlar o'sishi va avtomatik anomaliyalarni aniqlash paneli.
+              </p>
+            </div>
+
+            <div className="glass-card glass-card-hover rounded-2xl p-6 relative">
+              <span className="text-xs font-mono font-bold text-gray-500 mb-2 block">
+                05
+              </span>
+              <h3 className="text-lg font-bold text-white mb-2">📚 Kompaniya Bilim Bazasi</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Ichki tartib-qoidalar, xizmatlar va mahsulotlar bo'yicha yagona semantik vektor qidiruvi.
+              </p>
+            </div>
+
+            <div className="glass-card glass-card-hover rounded-2xl p-6 relative">
+              <span className="text-xs font-mono font-bold text-gray-500 mb-2 block">
+                06
+              </span>
+              <h3 className="text-lg font-bold text-white mb-2">📱 100% Responsive & Xavfsiz</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Kompyuter, planshet va smartfonlarda qulay ishlaydi, ma'lumotlar to'liq himoyalangan.
               </p>
             </div>
           </div>
