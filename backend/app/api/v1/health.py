@@ -18,6 +18,8 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app.core.config import settings
+
 router = APIRouter(tags=["Health Checks"])
 
 
@@ -97,7 +99,12 @@ def _check_disk() -> dict[str, Any]:
 @router.get("/api/health")
 async def health():
     """Basic health check — returns 200 if the process is running."""
-    return {"status": "ok", "service": "nexora-ai", "timestamp": time.time()}
+    return {
+        "status": "ok",
+        "service": "nexora-ai",
+        "version": settings.app_version,
+        "timestamp": time.time(),
+    }
 
 
 @router.get("/api/health/live")
