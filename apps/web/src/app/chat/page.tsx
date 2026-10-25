@@ -55,15 +55,6 @@ function normalizeBrainSources(value: unknown): BrainSource[] {
   });
 }
 
-const AGENTS = [
-  { key: "universal", name: "Universal AI", icon: "🤖", desc: "Umumiy biznes yordamchisi" },
-  { key: "analytics", name: "BI & Savdo", icon: "📊", desc: "Daromad, grafiklar va savdo tahlili" },
-  { key: "document", name: "Hujjatlar AI", icon: "📄", desc: "PDF, Excel va shartnomalar tahlili" },
-  { key: "finance", name: "Moliya & Xarajat", icon: "💰", desc: "Buxgalteriya va xarajat nazorati" },
-  { key: "hr", name: "HR & Jamoa", icon: "👥", desc: "Xodimlar, skriptlar va vazifalar" },
-  { key: "orchestrator", name: "AI Orkestrator", icon: "🎯", desc: "Murakkab so'rovlarni rejalashtirish" },
-];
-
 const QUICK_SUGGESTIONS = [
   {
     icon: "📈",
@@ -243,7 +234,6 @@ export default function ChatPage() {
     e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
   };
 
-  const currentAgentObj = AGENTS.find((a) => a.key === selectedAgent) || AGENTS[0];
   const initials = `${user?.firstName?.charAt(0) || "N"}${
     user?.lastName?.charAt(0) || "A"
   }`.toUpperCase();
@@ -330,50 +320,22 @@ export default function ChatPage() {
         </div>
       </header>
 
-      {/* Agent Selector Bar */}
-      <div className="bg-[#0b1222]/80 border-b border-gray-800/80 px-4 py-2.5 overflow-x-auto">
-        <div className="max-w-3xl mx-auto flex items-center gap-2">
-          <span className="text-[11px] font-bold text-gray-500 whitespace-nowrap uppercase tracking-wider mr-1">
-            Mutaxassis Agent:
-          </span>
-          {AGENTS.map((agent) => {
-            const isSelected = selectedAgent === agent.key;
-            return (
-              <button
-                key={agent.key}
-                onClick={() => setSelectedAgent(agent.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
-                  isSelected
-                    ? "btn-gradient shadow-md"
-                    : "bg-gray-900/80 text-gray-400 hover:text-white border border-gray-800"
-                }`}
-                title={agent.desc}
-              >
-                <span>{agent.icon}</span>
-                <span>{agent.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Main Chat Workspace */}
       <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-6 flex flex-col justify-between">
         {/* Messages / Welcome View */}
         <div className="flex-1 overflow-y-auto space-y-4 pb-6">
           {messages.length === 0 ? (
             <div className="py-8 text-center space-y-7 animate-fade-in-up">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-purple-600/30 to-cyan-500/30 border border-purple-500/30 flex items-center justify-center mx-auto text-3xl shadow-xl">
-                {currentAgentObj.icon}
+              <div className="w-16 h-16 rounded-2xl bg-gray-900 border border-gray-800 flex items-center justify-center mx-auto text-2xl font-bold text-gray-300">
+                N
               </div>
 
               <div className="max-w-md mx-auto">
                 <h1 className="text-2xl font-extrabold text-white">
-                  {currentAgentObj.name} faol
+                  Suhbatni boshlang
                 </h1>
                 <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-                  {currentAgentObj.desc}. Savolingizni yozing, fayl biriktiring yoki quyidagi tavsiya
-                  etiladigan biznes savollaridan foydalaning:
+                  Savolingizni yozing yoki quyidagi mavzulardan birini tanlang:
                 </p>
               </div>
 
@@ -401,59 +363,47 @@ export default function ChatPage() {
               </div>
             </div>
           ) : (
-            messages.map((msg) => {
-              const msgAgent = AGENTS.find((a) => a.key === msg.agentKey) || AGENTS[0];
-              return (
+            messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`flex ${
+                  msg.role === "user" ? "justify-end" : "justify-start"
+                } animate-fade-in-up`}
+              >
                 <div
-                  key={msg.id}
-                  className={`flex ${
-                    msg.role === "user" ? "justify-end" : "justify-start"
-                  } animate-fade-in-up`}
+                  className={`max-w-[85%] rounded-2xl p-4.5 ${
+                    msg.role === "user"
+                      ? "bg-gradient-to-r from-purple-600/40 to-indigo-600/30 border border-purple-500/40 text-white rounded-br-sm shadow-lg"
+                      : "glass-card text-gray-200 rounded-bl-sm border border-[#8da9ff]/20 shadow-md"
+                  }`}
                 >
+                  {msg.attachmentName && (
+                    <div className="mb-2 p-2 rounded-lg bg-gray-900/80 border border-gray-700/60 text-xs flex items-center gap-2 text-cyan-300">
+                      <span>📎 Hujjat:</span>
+                      <span className="font-semibold text-white">{msg.attachmentName}</span>
+                    </div>
+                  )}
+
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap font-normal">
+                    {msg.text}
+                  </div>
+
                   <div
-                    className={`max-w-[85%] rounded-2xl p-4.5 ${
-                      msg.role === "user"
-                        ? "bg-gradient-to-r from-purple-600/40 to-indigo-600/30 border border-purple-500/40 text-white rounded-br-sm shadow-lg"
-                        : "glass-card text-gray-200 rounded-bl-sm border border-[#8da9ff]/20 shadow-md"
+                    className={`text-[10px] mt-2 ${
+                      msg.role === "user" ? "text-purple-200/70 text-right" : "text-gray-500"
                     }`}
                   >
-                    {msg.role === "ai" && (
-                      <div className="text-xs font-bold text-cyan-400 mb-2 flex items-center gap-1.5">
-                        <span>{msgAgent.icon}</span>
-                        <span>{msgAgent.name}</span>
-                      </div>
-                    )}
-
-                    {msg.attachmentName && (
-                      <div className="mb-2 p-2 rounded-lg bg-gray-900/80 border border-gray-700/60 text-xs flex items-center gap-2 text-cyan-300">
-                        <span>📎 Hujjat:</span>
-                        <span className="font-semibold text-white">{msg.attachmentName}</span>
-                      </div>
-                    )}
-
-                    <div className="text-sm leading-relaxed whitespace-pre-wrap font-normal">
-                      {msg.text}
-                    </div>
-
-                    <div
-                      className={`text-[10px] mt-2 ${
-                        msg.role === "user" ? "text-purple-200/70 text-right" : "text-gray-500"
-                      }`}
-                    >
-                      {msg.timestamp}
-                    </div>
+                    {msg.timestamp}
                   </div>
                 </div>
-              );
-            })
+              </div>
+            ))
           )}
 
           {isTyping && (
             <div className="flex justify-start">
               <div className="glass-card rounded-2xl rounded-bl-sm p-4 border border-[#8da9ff]/20 flex items-center gap-2">
-                <span className="text-xs text-purple-400 font-medium">
-                  {currentAgentObj.name} tahlil qilmoqda
-                </span>
+                <span className="text-xs text-gray-400 font-medium">Javob tayyorlanmoqda</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse [animation-delay:0.2s]" />
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse [animation-delay:0.4s]" />
@@ -505,7 +455,7 @@ export default function ChatPage() {
               value={input}
               onChange={handleInput}
               onKeyDown={handleKeyDown}
-              placeholder={`${currentAgentObj.name}ga savolingizni yozing...`}
+              placeholder="Xabaringizni yozing..."
               rows={1}
               className="flex-1 bg-transparent px-2 py-2 text-white placeholder-gray-500 text-sm resize-none focus:outline-none max-h-40 font-normal leading-relaxed"
             />
@@ -521,8 +471,6 @@ export default function ChatPage() {
           </form>
           <div className="text-[11px] text-gray-500 text-center mt-2 font-normal flex items-center justify-center gap-4">
             <span>Enter — yuborish, Shift+Enter — yangi qator</span>
-            <span>•</span>
-            <span className="text-cyan-400 font-semibold">{currentAgentObj.name}</span>
           </div>
         </div>
       </main>
@@ -685,7 +633,7 @@ function generateSpecializedReply(userText: string, agentKey: string, attachment
   }
 
   if (agentKey === "analytics") {
-    return `📊 **BI & Savdo Analitiki hisoboti:**
+    return `📊 **Savdo va daromad hisoboti:**
 
 - **Dinamika:** Joriy davrda tushum o'sishi +18.4% ni tashkil qilmoqda.
 - **Konversiya:** Asosiy konversiya xarid voronkasining 2-bosqichida (menejer muloqotida) shakllanmoqda.
@@ -695,7 +643,7 @@ Batafsil grafik va KPI larni **/analytics** bo'limida ham ko'rishingiz mumkin.`;
   }
 
   if (agentKey === "document") {
-    return `📄 **Hujjatlar Tahlilchisi xulosasi:**
+    return `📄 **Hujjat tahlili:**
 
 Hujjatlar va shartnomalar bilan ishlashda quyidagi qoidalar muhim:
 1. **Majburiyatlar va muddatlar:** Har bir tomonning javobgarlik chegarasi aniq belgilangan bo'lishi shart.
@@ -704,7 +652,7 @@ Hujjatlar va shartnomalar bilan ishlashda quyidagi qoidalar muhim:
   }
 
   if (agentKey === "finance") {
-    return `💰 **Moliya & Xarajatlar mutaxassisi javobi:**
+    return `💰 **Xarajatlar bo‘yicha javob:**
 
 Rentabellikni saqlash bo'yicha 3 ta amaliy qadam:
 1. **Oylik xarajatlar auditi:** Har bir xarajat moddasi foyda keltirayotganiga ishonch hosil qiling.
@@ -713,19 +661,19 @@ Rentabellikni saqlash bo'yicha 3 ta amaliy qadam:
   }
 
   if (agentKey === "hr") {
-    return `👥 **HR & Jamoa bo'yicha mutaxassis javobi:**
+    return `👥 **Jamoa bilan ishlash bo‘yicha javob:**
 
 Mijozlar bilan ishlash va jamoa unumdorligini oshirish:
 1. **Skript:** "Assalomu alaykum! Sizning biznesingizda jarayonlarni soddalashtirish va xarajatni kamaytirish bo'yicha yangi yechimimiz bor. 5 daqiqa vaqtingiz bormi?"
 2. **KPI tizimi:** Xodimlarga shunchaki soatbay emas, bajarilgan natijalar bo'yicha bonus belgilang.`;
   }
 
-  return `🤖 **Nexora AI javobi:**
+  return `**Nexora javobi:**
 
 Savolingiz qabul qilindi. 
 - Jarayonlarni bosqichma-bosqich rejalashtirish;
 - Mas'ul xodimlarni biriktirish;
 - Haftalik natijalarni monitoring qilib borish tavsiya etiladi.
 
-Aniqroq maslahat olish uchun yuqoridagi mutaxassis agentlardan birini tanlashingiz yoki hujjat biriktirishingiz mumkin.`;
+Aniqroq maslahat olish uchun savolingizni batafsilroq yozing yoki hujjat biriktiring.`;
 }
