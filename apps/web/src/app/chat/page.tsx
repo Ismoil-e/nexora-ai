@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth-context";
+import ChatBrainPanel, { type BrainSource } from "@/components/ChatBrainPanel";
 
 interface ChatMessage {
   id: string;
@@ -11,6 +12,47 @@ interface ChatMessage {
   timestamp: string;
   agentKey?: string;
   attachmentName?: string;
+  sources?: BrainSource[];
+}
+
+function normalizeBrainSources(value: unknown): BrainSource[] {
+  if (!Array.isArray(value)) return [];
+
+  const firstText = (...values: unknown[]) =>
+    values.find((item): item is string => typeof item === "string" && item.trim().length > 0);
+
+  return value.flatMap((item, index) => {
+    if (typeof item === "string") {
+      return item.trim()
+        ? [{ id: `source-${index}-${item}`, name: item.trim() }]
+        : [];
+    }
+    if (!item || typeof item !== "object") return [];
+
+    const source = item as Record<string, unknown>;
+    const name = firstText(
+      source.original_filename,
+      source.filename,
+      source.file_name,
+      source.document_name,
+      source.title,
+      source.name,
+      source.source,
+      source.source_type,
+    );
+    const snippet = firstText(source.snippet, source.content, source.text, source.quote);
+    const location = firstText(source.section, source.page_label) ||
+      (typeof source.page === "number" ? `Sahifa ${source.page}` : undefined) ||
+      (typeof source.page_number === "number" ? `Sahifa ${source.page_number}` : undefined);
+
+    if (!name && !snippet) return [];
+
+    return [{
+      id: String(source.document_id || source.id || `${name || "manba"}-${index}`),
+      name: name || `Manba ${index + 1}`,
+      detail: location || snippet?.slice(0, 150),
+    }];
+  });
 }
 
 const AGENTS = [
@@ -57,6 +99,7 @@ export default function ChatPage() {
   const [attachedFile, setAttachedFile] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [brainOpen, setBrainOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -133,10 +176,14 @@ export default function ChatPage() {
       }).catch(() => null);
 
       let aiText = "";
+      let aiSources: BrainSource[] = [];
 
       if (res && res.ok) {
         const data = await res.json();
         aiText = data.reply || data.output || "Javob olindi.";
+        aiSources = normalizeBrainSources(data.sources);
+        if (!aiSources.length) aiSources = normalizeBrainSources(data.citations);
+        if (!aiSources.length) aiSources = normalizeBrainSources(data.references);
       } else {
         await new Promise((r) => setTimeout(r, 900));
         aiText = generateSpecializedReply(text, currentAgent, fileSent);
@@ -151,6 +198,7 @@ export default function ChatPage() {
           minute: "2-digit",
         }),
         agentKey: currentAgent,
+        sources: aiSources.length ? aiSources : undefined,
       };
 
       saveMessages([...updated, aiMessage]);
@@ -199,6 +247,16 @@ export default function ChatPage() {
   const initials = `${user?.firstName?.charAt(0) || "N"}${
     user?.lastName?.charAt(0) || "A"
   }`.toUpperCase();
+  const uploadedFiles = Array.from(new Set([
+    ...messages.map((message) => message.attachmentName),
+    attachedFile,
+  ].filter((name): name is string => Boolean(name))));
+  const allSources = messages.flatMap((message) =>
+    message.role === "ai" ? message.sources || [] : []
+  );
+  const usedSources = allSources.filter((source, index) =>
+    allSources.findIndex((item) => item.id === source.id || item.name === source.name) === index
+  );
 
   return (
     <div className="min-h-screen bg-[#070b14] text-[#f0f4ff] flex flex-col selection:bg-purple-600/40">
@@ -515,6 +573,22 @@ export default function ChatPage() {
                   </div>
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setBrainOpen(true);
+                  }}
+                  className="w-full flex items-center gap-3 rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-3 py-3 text-left transition-colors hover:border-cyan-300/40 hover:bg-cyan-400/10"
+                >
+                  <span className="w-9 h-9 rounded-xl bg-cyan-400/10 text-cyan-300 flex items-center justify-center text-lg" aria-hidden="true">✳</span>
+                  <span className="flex-1">
+                    <span className="block text-xs font-bold text-white">AI miyasi</span>
+                    <span className="block mt-1 text-[10px] text-gray-400">Manbalar va yuklangan fayllar</span>
+                  </span>
+                  <span className="text-cyan-300" aria-hidden="true">↗</span>
+                </button>
+
                 {/* Navigation Sections */}
                 <div className="pt-2">
                   <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">
@@ -586,6 +660,14 @@ export default function ChatPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {brainOpen && (
+        <ChatBrainPanel
+          sources={usedSources}
+          uploadedFiles={uploadedFiles}
+          onClose={() => setBrainOpen(false)}
+        />
       )}
     </div>
   );
