@@ -214,13 +214,6 @@ export default function ChatPage() {
     }
   };
 
-  const clearHistory = () => {
-    if (confirm("Haqiqatan ham suhbat tarixini tozalashni xohlaysizmi?")) {
-      setMessages([]);
-      localStorage.removeItem(storageKey);
-    }
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -295,14 +288,6 @@ export default function ChatPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {messages.length > 0 && (
-            <button
-              onClick={clearHistory}
-              className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/30 transition-all cursor-pointer"
-            >
-              Tozalash
-            </button>
-          )}
           <button
             onClick={() => setMenuOpen(true)}
             className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-cyan-500 text-black font-extrabold text-sm flex items-center justify-center shadow-md hover:scale-105 transition-transform cursor-pointer"
