@@ -1,12 +1,18 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  loginRequest,
+  registerRequest,
+  revokeAuthSession,
+  verifyMfaRequest,
+} from "@/lib/api";
 
 export interface UserProfile {
   id: string;
   firstName: string;
   lastName: string;
-  name: string; // firstName + lastName
+  name: string;
   businessName: string;
   email: string;
   balance: string;
@@ -17,6 +23,7 @@ export interface UserProfile {
 interface AuthContextType {
   user: UserProfile | null;
   isLoggedIn: boolean;
+  isLoading: boolean;
   isAdmin: boolean;
   isCustomer: boolean;
   login: (email?: string, password?: string) => Promise<boolean>;
@@ -27,31 +34,54 @@ interface AuthContextType {
     email: string;
     password?: string;
   }) => Promise<boolean>;
+  verifyMfaLogin: (code: string) => Promise<boolean>;
   logout: () => void;
   updateProfile: (data: Partial<UserProfile>) => void;
 }
 
-const DEFAULT_PROFILE: UserProfile = {
-  id: "user-default-1",
-  firstName: "Ismoil",
-  lastName: "Rahmonaliyev",
-  name: "Ismoil Rahmonaliyev",
-  businessName: "Nexora Business",
-  email: "ismoil@nexora.ai",
-  balance: "50,000 UZS",
-  role: "admin",
-};
-
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoggedIn: false,
-  isAdmin: true,
+  isLoading: true,
+  isAdmin: false,
   isCustomer: false,
-  login: async () => true,
-  register: async () => true,
+  login: async () => false,
+  register: async () => false,
+  verifyMfaLogin: async () => false,
   logout: () => {},
   updateProfile: () => {},
 });
+
+function profileFromApi(apiUser: Record<string, any>): UserProfile {
+  let previous: Partial<UserProfile> = {};
+  try {
+    const saved = localStorage.getItem("userProfile");
+    if (saved) previous = JSON.parse(saved);
+  } catch {}
+
+  const firstName = apiUser.first_name || previous.firstName || "";
+  const lastName = apiUser.last_name || previous.lastName || "";
+  return {
+    id: String(apiUser.id),
+    firstName,
+    lastName,
+    name: [firstName, lastName].filter(Boolean).join(" "),
+    businessName: apiUser.company_name || previous.businessName || "Biznesim",
+    email: apiUser.email,
+    balance: previous.balance || "0 UZS",
+    photoData: apiUser.avatar_url || undefined,
+    role: apiUser.role === "admin" ? "admin" : "customer",
+  };
+}
+
+function saveSession(accessToken: string, refreshToken: string, apiUser: Record<string, any>) {
+  const profile = profileFromApi(apiUser);
+  localStorage.setItem("token", accessToken);
+  localStorage.setItem("refresh_token", refreshToken);
+  localStorage.setItem("userProfile", JSON.stringify(profile));
+  localStorage.setItem("isLoggedIn", "true");
+  return profile;
+}
 
 export function useAuth() {
   return useContext(AuthContext);
@@ -60,42 +90,48 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [pendingMfaUserId, setPendingMfaUserId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
+      const token = localStorage.getItem("token");
       const stored = localStorage.getItem("userProfile");
-      const loggedInFlag = localStorage.getItem("isLoggedIn") === "true";
-      if (stored && loggedInFlag) {
-        const parsed = JSON.parse(stored);
-        setUser({
-          ...DEFAULT_PROFILE,
-          ...parsed,
-          name: `${parsed.firstName || ""} ${parsed.lastName || ""}`.trim() || DEFAULT_PROFILE.name,
-        });
+      if (token && stored) {
+        setUser(JSON.parse(stored));
         setIsLoggedIn(true);
       } else {
-        // Agar birinchi marta kirgan bo'lsa, avtomatik ravishda default profilni faollashtiramiz
-        setUser(DEFAULT_PROFILE);
-        setIsLoggedIn(true);
-        localStorage.setItem("userProfile", JSON.stringify(DEFAULT_PROFILE));
-        localStorage.setItem("isLoggedIn", "true");
+        setUser(null);
+        setIsLoggedIn(false);
       }
     } catch {
-      setUser(DEFAULT_PROFILE);
-      setIsLoggedIn(true);
+      setUser(null);
+      setIsLoggedIn(false);
+    } finally {
+      setIsLoading(false);
     }
+
+    const expireSession = () => {
+      setUser(null);
+      setIsLoggedIn(false);
+      localStorage.setItem("isLoggedIn", "false");
+    };
+    window.addEventListener("nexora:auth-expired", expireSession);
+    return () => window.removeEventListener("nexora:auth-expired", expireSession);
   }, []);
 
-  const login = async (email?: string) => {
-    const current = user || DEFAULT_PROFILE;
-    const updated: UserProfile = {
-      ...current,
-      email: email || current.email,
-    };
-    setUser(updated);
+  const login = async (email?: string, password?: string) => {
+    if (!email || !password) throw new Error("Email va parolni kiriting.");
+    const result = await loginRequest(email, password);
+    if (result.requires_mfa) {
+      setPendingMfaUserId(String(result.user.id));
+      throw new Error("MFA_REQUIRED");
+    }
+
+    const profile = saveSession(result.access_token, result.refresh_token, result.user);
+    setUser(profile);
     setIsLoggedIn(true);
-    localStorage.setItem("userProfile", JSON.stringify(updated));
-    localStorage.setItem("isLoggedIn", "true");
+    setPendingMfaUserId(null);
     return true;
   };
 
@@ -106,36 +142,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: string;
     password?: string;
   }) => {
-    const newProfile: UserProfile = {
-      id: `user-${Date.now()}`,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      name: `${data.firstName} ${data.lastName}`.trim(),
-      businessName: data.businessName,
+    if (!data.password) throw new Error("Parolni kiriting.");
+    const result = await registerRequest({
+      first_name: data.firstName,
+      last_name: data.lastName,
+      company_name: data.businessName,
       email: data.email,
-      balance: "50,000 UZS",
-      role: "customer",
-    };
-    setUser(newProfile);
+      password: data.password,
+    });
+    const profile = saveSession(result.access_token, result.refresh_token, result.user);
+    setUser(profile);
     setIsLoggedIn(true);
-    localStorage.setItem("userProfile", JSON.stringify(newProfile));
-    localStorage.setItem("isLoggedIn", "true");
+    return true;
+  };
+
+  const verifyMfaLogin = async (code: string) => {
+    if (!pendingMfaUserId) throw new Error("Avval tizimga kiring.");
+    const result = await verifyMfaRequest(pendingMfaUserId, code);
+    const profile = saveSession(result.access_token, result.refresh_token, result.user);
+    setUser(profile);
+    setIsLoggedIn(true);
+    setPendingMfaUserId(null);
     return true;
   };
 
   const logout = () => {
-    setIsLoggedIn(false);
-    setUser(null);
-    localStorage.setItem("isLoggedIn", "false");
+    void revokeAuthSession().catch(() => {});
+    localStorage.removeItem("token");
+    localStorage.removeItem("refresh_token");
     localStorage.removeItem("userProfile");
+    localStorage.setItem("isLoggedIn", "false");
+    setUser(null);
+    setIsLoggedIn(false);
   };
 
   const updateProfile = (data: Partial<UserProfile>) => {
-    setUser((prev) => {
-      const base = prev || DEFAULT_PROFILE;
-      const updated = { ...base, ...data };
+    setUser((previous) => {
+      if (!previous) return previous;
+      const updated = { ...previous, ...data };
       if (data.firstName || data.lastName) {
-        updated.name = `${updated.firstName} ${updated.lastName}`.trim();
+        updated.name = [updated.firstName, updated.lastName].filter(Boolean).join(" ");
       }
       localStorage.setItem("userProfile", JSON.stringify(updated));
       return updated;
@@ -147,10 +193,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         isLoggedIn,
+        isLoading,
         isAdmin: user?.role === "admin",
         isCustomer: user?.role === "customer",
         login,
         register,
+        verifyMfaLogin,
         logout,
         updateProfile,
       }}

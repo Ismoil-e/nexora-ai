@@ -105,43 +105,6 @@ def create_app() -> FastAPI:
         from fastapi.responses import Response
         return Response(content=get_metrics(), media_type=get_metrics_content_type())
 
-    @app.post("/api/chat")
-    async def chat_proxy(request: Request):
-        from app.services.ai_service import AIService
-        from app.core.database import async_session_factory
-        from app.core.security import decode_token
-        import uuid as _uuid
-
-        body = await request.json()
-        user_text = body.get("message", "")
-        history = body.get("history", [])
-
-        # Extract user context from token if available
-        company_id = None
-        user_id = None
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            payload = decode_token(auth_header.split(" ")[1])
-            if payload and "sub" in payload:
-                user_id = _uuid.UUID(payload["sub"])
-                if "company_id" in payload:
-                    company_id = _uuid.UUID(payload["company_id"])
-
-        system_prompt = "Sen Nexora AI yordamchisisan. Foydalanuvchilarga yordam berish uchun o'zbek tilida javob ber."
-
-        messages = []
-        for msg in history:
-            role = "assistant" if msg.get("role") == "model" else "user"
-            content = msg.get("parts", [{}])[0].get("text", "") if isinstance(msg.get("parts"), list) else msg.get("content", "")
-            messages.append({"role": role, "content": content})
-        messages.append({"role": "user", "content": user_text})
-
-        async with async_session_factory() as session:
-            service = AIService(db=session, company_id=company_id, user_id=user_id)
-            result = await service.chat(messages=messages, system_prompt=system_prompt)
-
-        return {"reply": result["content"]}
-
     @app.get("/")
     async def serve_index():
         return FileResponse(FRONTEND_DIR / "index.html")

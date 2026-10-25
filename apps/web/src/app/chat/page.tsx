@@ -1,8 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth-context";
+import {
+  getOrCreatePersistentChat,
+  getPersistentChatMessages,
+  importLegacyChatHistory,
+  sendPersistentChatMessage,
+  type PersistentChatMessage,
+} from "@/lib/api";
 import ChatBrainPanel, { type BrainSource } from "@/components/ChatBrainPanel";
 
 interface ChatMessage {
@@ -10,7 +18,6 @@ interface ChatMessage {
   role: "user" | "ai";
   text: string;
   timestamp: string;
-  agentKey?: string;
   attachmentName?: string;
   sources?: BrainSource[];
 }
@@ -55,40 +62,54 @@ function normalizeBrainSources(value: unknown): BrainSource[] {
   });
 }
 
+function mapPersistentMessage(message: PersistentChatMessage): ChatMessage {
+  const timestamp = message.legacy_timestamp || new Date(message.created_at).toLocaleTimeString("uz-UZ", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return {
+    id: message.id,
+    role: message.role === "user" ? "user" : "ai",
+    text: message.content,
+    timestamp,
+    attachmentName: message.attachment_name || undefined,
+    sources: normalizeBrainSources(message.sources),
+  };
+}
+
 const QUICK_SUGGESTIONS = [
   {
     icon: "📈",
-    agent: "analytics",
     title: "Savdo va daromadni oshirish",
     prompt: "Biznesimizda oylik savdo hajmi va daromadni oshirish uchun qanday samarali strategiyalarni tavsiya qilasiz?",
   },
   {
     icon: "📄",
-    agent: "document",
     title: "Shartnoma va hujjatlar tahlili",
     prompt: "Biznes shartnomalarini tekshirishda qanday asosiy xavflar va qonuniy bandlarga e'tibor qaratish kerak?",
   },
   {
     icon: "💰",
-    agent: "finance",
     title: "Xarajatlarni optimallashtirish",
     prompt: "Kichik va o'rta biznesda ortiqcha xarajatlarni qisqartirish va sof rentabellikni ko'tarish usullari qanday?",
   },
   {
     icon: "👥",
-    agent: "hr",
     title: "Mijozlar bilan ishlash skripti",
     prompt: "Savdo menejerlari uchun mijozlarning e'tirozlarini professional tarzda yenguvchi qisqa savdo skripti tuzib bering.",
   },
 ];
 
 export default function ChatPage() {
-  const { user, isLoggedIn, logout } = useAuth();
+  const router = useRouter();
+  const { user, isLoggedIn, isLoading: isAuthLoading, logout } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [selectedAgent, setSelectedAgent] = useState("universal");
   const [attachedFile, setAttachedFile] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [isLoadingChat, setIsLoadingChat] = useState(true);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [brainOpen, setBrainOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -96,15 +117,71 @@ export default function ChatPage() {
 
   const storageKey = `nexora_chat_${user?.email || "guest"}`;
 
-  // Load chat history
+  // The server is the source of truth; browser storage is retained for one-time migration.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        setMessages(JSON.parse(saved));
+    if (isAuthLoading) return;
+    if (!isLoggedIn) {
+      router.replace("/login");
+      return;
+    }
+
+    let cancelled = false;
+    const loadChat = async () => {
+      setIsLoadingChat(true);
+      setChatId(null);
+      setChatError(null);
+      let cachedMessages: ChatMessage[] = [];
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) cachedMessages = parsed;
+        }
+      } catch {}
+      if (!cancelled && cachedMessages.length) setMessages(cachedMessages);
+
+      try {
+        const chat = await getOrCreatePersistentChat();
+        if (cancelled) return;
+
+        let firstPage = await getPersistentChatMessages(chat.id, 1);
+        if (firstPage.total === 0 && cachedMessages.length) {
+          await importLegacyChatHistory(chat.id, cachedMessages.map((message) => ({
+            id: message.id,
+            role: message.role,
+            text: message.text,
+            timestamp: message.timestamp,
+            attachment_name: message.attachmentName,
+            sources: message.sources || [],
+          })));
+          firstPage = await getPersistentChatMessages(chat.id, 1);
+        }
+
+        const serverMessages = [...firstPage.items];
+        const pageCount = Math.ceil(firstPage.total / firstPage.page_size);
+        for (let page = 2; page <= pageCount; page += 1) {
+          const result = await getPersistentChatMessages(chat.id, page);
+          serverMessages.push(...result.items);
+        }
+        const loaded = serverMessages.map(mapPersistentMessage);
+        if (cancelled) return;
+        setMessages(loaded);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(loaded));
+        } catch {}
+        setChatId(chat.id);
+      } catch {
+        if (!cancelled) {
+          setChatError("Serverga ulanib bo‘lmadi. Suhbat serverdan yuklanmadi; internet yoki serverni tekshirib, qayta urinib ko‘ring.");
+        }
+      } finally {
+        if (!cancelled) setIsLoadingChat(false);
       }
-    } catch {}
-  }, [storageKey]);
+    };
+
+    void loadChat();
+    return () => { cancelled = true; };
+  }, [isAuthLoading, isLoggedIn, router, storageKey]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -118,89 +195,22 @@ export default function ChatPage() {
     } catch {}
   };
 
-  const handleSend = async (textToSend?: string, agentOverride?: string) => {
+  const handleSend = async (textToSend?: string) => {
     const text = (textToSend || input).trim();
-    if (!text || isTyping) return;
-
-    const currentAgent = agentOverride || selectedAgent;
-    const timeStr = new Date().toLocaleTimeString("uz-UZ", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    const userMessage: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      role: "user",
-      text,
-      timestamp: timeStr,
-      agentKey: currentAgent,
-      attachmentName: attachedFile || undefined,
-    };
-
-    const updated = [...messages, userMessage];
-    saveMessages(updated);
-    setInput("");
+    if (!text || isTyping || !chatId) return;
     const fileSent = attachedFile;
-    setAttachedFile(null);
-
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
     setIsTyping(true);
+    setChatError(null);
 
     try {
-      // 1. Try backend API
-      const history = updated.slice(-10).map((m) => ({
-        role: m.role === "user" ? "user" : "model",
-        parts: [{ text: m.text }],
-      }));
-
-      const res = await fetch("http://localhost:8000/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history,
-          agent: currentAgent,
-          attachment: fileSent,
-        }),
-      }).catch(() => null);
-
-      let aiText = "";
-      let aiSources: BrainSource[] = [];
-
-      if (res && res.ok) {
-        const data = await res.json();
-        aiText = data.reply || data.output || "Javob olindi.";
-        aiSources = normalizeBrainSources(data.sources);
-        if (!aiSources.length) aiSources = normalizeBrainSources(data.citations);
-        if (!aiSources.length) aiSources = normalizeBrainSources(data.references);
-      } else {
-        await new Promise((r) => setTimeout(r, 900));
-        aiText = generateSpecializedReply(text, currentAgent, fileSent);
-      }
-
-      const aiMessage: ChatMessage = {
-        id: `msg-${Date.now() + 1}`,
-        role: "ai",
-        text: aiText,
-        timestamp: new Date().toLocaleTimeString("uz-UZ", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        agentKey: currentAgent,
-        sources: aiSources.length ? aiSources : undefined,
-      };
-
-      saveMessages([...updated, aiMessage]);
-    } catch (err: any) {
-      const errorMsg: ChatMessage = {
-        id: `msg-${Date.now() + 1}`,
-        role: "ai",
-        text: "Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.",
-        timestamp: timeStr,
-      };
-      saveMessages([...updated, errorMsg]);
+      const result = await sendPersistentChatMessage(chatId, text, fileSent);
+      const updated = [...messages, mapPersistentMessage(result.message), mapPersistentMessage(result.ai_message)];
+      saveMessages(updated);
+      setInput("");
+      setAttachedFile(null);
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+    } catch {
+      setChatError("Xabar serverda saqlanmadi. Ulanishni tekshirib, qayta yuboring.");
     } finally {
       setIsTyping(false);
     }
@@ -210,7 +220,6 @@ export default function ChatPage() {
     const file = e.target.files?.[0];
     if (file) {
       setAttachedFile(file.name);
-      setSelectedAgent("document"); // Switch to document agent automatically
     }
   };
 
@@ -309,7 +318,9 @@ export default function ChatPage() {
       <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-6 flex flex-col justify-between">
         {/* Messages / Welcome View */}
         <div className="flex-1 overflow-y-auto space-y-4 pb-6">
-          {messages.length === 0 ? (
+          {isLoadingChat ? (
+            <div className="py-16 text-center text-sm text-gray-400">Suhbat yuklanmoqda...</div>
+          ) : messages.length === 0 ? (
             <div className="py-8 text-center space-y-7 animate-fade-in-up">
               <div className="w-16 h-16 rounded-2xl bg-gray-900 border border-gray-800 flex items-center justify-center mx-auto text-2xl font-bold text-gray-300">
                 N
@@ -329,7 +340,7 @@ export default function ChatPage() {
                 {QUICK_SUGGESTIONS.map((item, idx) => (
                   <button
                     key={idx}
-                    onClick={() => handleSend(item.prompt, item.agent)}
+                    onClick={() => handleSend(item.prompt)}
                     className="p-4 rounded-xl glass-card glass-card-hover text-left flex items-start gap-3 cursor-pointer group"
                   >
                     <span className="text-2xl group-hover:scale-110 transition-transform">
@@ -401,6 +412,11 @@ export default function ChatPage() {
 
         {/* Input Bar */}
         <div className="pt-2">
+          {chatError && (
+            <div role="status" className="mb-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              {chatError}
+            </div>
+          )}
           {/* Active file badge */}
           {attachedFile && (
             <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-800 text-xs text-purple-300">
@@ -447,7 +463,7 @@ export default function ChatPage() {
 
             <button
               type="submit"
-              disabled={!input.trim() || isTyping}
+              disabled={!input.trim() || isTyping || isLoadingChat || !chatId}
               className="px-5 py-2.5 rounded-xl btn-gradient text-xs font-bold shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-1.5"
             >
               <span>Yuborish</span>
@@ -604,61 +620,4 @@ export default function ChatPage() {
       )}
     </div>
   );
-}
-
-function generateSpecializedReply(userText: string, agentKey: string, attachment?: string | null): string {
-  const lower = userText.toLowerCase();
-
-  if (attachment) {
-    return `📎 **"${attachment}" hujjati tahlil qilindi:**
-
-1. **Hujjat strukturasi:** Fayl matni va jadvallari pgvector orqali to'liq indekslandi.
-2. **Asosiy topilmalar:** Siz bergan savol bo'yicha hujjatdagi muhim moddalar va raqamlar aniqlandi.
-3. **AI Tavsiyasi:** Ushbu shartnoma/hisobot bo'yicha qo'shimcha savollaringiz bo'lsa, istalgan bandi bo'yicha aniqlik kiritishim mumkin.`;
-  }
-
-  if (agentKey === "analytics") {
-    return `📊 **Savdo va daromad hisoboti:**
-
-- **Dinamika:** Joriy davrda tushum o'sishi +18.4% ni tashkil qilmoqda.
-- **Konversiya:** Asosiy konversiya xarid voronkasining 2-bosqichida (menejer muloqotida) shakllanmoqda.
-- **Tavsiya:** Yangi mijozlarni jalb qilishdan ko'ra, mavjud mijozlarga takroriy sotuv (LTV) strategiyasini kuchaytirish daromadni 22% ga oshiradi.
-
-Batafsil grafik va KPI larni **/analytics** bo'limida ham ko'rishingiz mumkin.`;
-  }
-
-  if (agentKey === "document") {
-    return `📄 **Hujjat tahlili:**
-
-Hujjatlar va shartnomalar bilan ishlashda quyidagi qoidalar muhim:
-1. **Majburiyatlar va muddatlar:** Har bir tomonning javobgarlik chegarasi aniq belgilangan bo'lishi shart.
-2. **Fors-major va bekor qilish shartlari:** Jarima sanksiyalariga e'tibor qarating.
-3. **Faylni tekshirtirish:** Agar aniq shartnomangiz bo'lsa, pastdagi 📎 tugmasi orqali yuklang, men uni to'liq tekshirib xatolarni topib beraman.`;
-  }
-
-  if (agentKey === "finance") {
-    return `💰 **Xarajatlar bo‘yicha javob:**
-
-Rentabellikni saqlash bo'yicha 3 ta amaliy qadam:
-1. **Oylik xarajatlar auditi:** Har bir xarajat moddasi foyda keltirayotganiga ishonch hosil qiling.
-2. **Buxgalteriya intizomi:** To'lovlar grafigi va debitorlik qarzlarini avtomatik eslatmalar orqali nazorat qiling.
-3. **Zaxira fondi:** Kutilmagan tebranishlar uchun kamida 2 oylik operatsion xarajat zaxirasini shakllantiring.`;
-  }
-
-  if (agentKey === "hr") {
-    return `👥 **Jamoa bilan ishlash bo‘yicha javob:**
-
-Mijozlar bilan ishlash va jamoa unumdorligini oshirish:
-1. **Skript:** "Assalomu alaykum! Sizning biznesingizda jarayonlarni soddalashtirish va xarajatni kamaytirish bo'yicha yangi yechimimiz bor. 5 daqiqa vaqtingiz bormi?"
-2. **KPI tizimi:** Xodimlarga shunchaki soatbay emas, bajarilgan natijalar bo'yicha bonus belgilang.`;
-  }
-
-  return `**Nexora javobi:**
-
-Savolingiz qabul qilindi. 
-- Jarayonlarni bosqichma-bosqich rejalashtirish;
-- Mas'ul xodimlarni biriktirish;
-- Haftalik natijalarni monitoring qilib borish tavsiya etiladi.
-
-Aniqroq maslahat olish uchun savolingizni batafsilroq yozing yoki hujjat biriktiring.`;
 }

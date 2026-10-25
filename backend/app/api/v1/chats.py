@@ -9,12 +9,26 @@ from app.schemas.chat import (
     ChatCreate,
     ChatResponse,
     ChatUpdate,
+    ImportChatHistoryRequest,
     SendMessageRequest,
     SendMessageResponse,
 )
 from app.services.chat_service import ChatService
 
 router = APIRouter(prefix="/chats", tags=["Chats"])
+
+
+def _chat_response(chat, message_count: int = 0) -> ChatResponse:
+    return ChatResponse(
+        id=chat.id,
+        title=chat.title,
+        ai_provider=chat.ai_provider,
+        model=chat.model,
+        token_count=chat.token_count,
+        is_archived=chat.is_archived,
+        created_at=chat.created_at.isoformat(),
+        message_count=message_count,
+    )
 
 
 @router.get("")
@@ -37,24 +51,20 @@ async def create_chat(
     db: AsyncSession = Depends(get_db),
 ):
     service = ChatService(db)
-    chat = await service.create_chat(
-        company_id=company_id,
-        user_id=current_user.id,
-        title=body.title,
-        ai_provider=body.ai_provider,
-        model=body.model,
-        agent_id=body.agent_id,
-    )
-    return ChatResponse(
-        id=chat.id,
-        title=chat.title,
-        ai_provider=chat.ai_provider,
-        model=chat.model,
-        token_count=chat.token_count,
-        is_archived=chat.is_archived,
-        created_at=chat.created_at.isoformat(),
-        message_count=0,
-    )
+    chat = await service.get_or_create_persistent_chat(company_id, current_user.id)
+    return _chat_response(chat, len(chat.messages) if chat.messages else 0)
+
+
+@router.post("/persistent", response_model=ChatResponse)
+async def get_or_create_persistent_chat(
+    company_id: uuid.UUID = Depends(get_current_company_id),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the user's single long-lived chat, creating it only once."""
+    service = ChatService(db)
+    chat = await service.get_or_create_persistent_chat(company_id, current_user.id)
+    return _chat_response(chat, len(chat.messages) if chat.messages else 0)
 
 
 @router.get("/{chat_id}/messages")
@@ -66,7 +76,24 @@ async def get_chat_messages(
     current_user: User = Depends(get_current_user),
 ):
     service = ChatService(db)
-    return await service.get_chat_history(chat_id, page, page_size)
+    result = await service.get_chat_history(chat_id, current_user.id, page, page_size)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Chat topilmadi")
+    return result
+
+
+@router.post("/{chat_id}/history/import")
+async def import_chat_history(
+    chat_id: uuid.UUID,
+    body: ImportChatHistoryRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = ChatService(db)
+    result = await service.import_legacy_history(chat_id, current_user.id, body.messages)
+    if result["imported"] == 0 and not result["already_exists"]:
+        raise HTTPException(status_code=404, detail="Chat topilmadi")
+    return result
 
 
 @router.post("/{chat_id}/messages", response_model=SendMessageResponse)
@@ -77,7 +104,12 @@ async def send_message(
     db: AsyncSession = Depends(get_db),
 ):
     service = ChatService(db)
-    result = await service.send_message(chat_id, current_user.id, body.content)
+    result = await service.send_message(
+        chat_id,
+        current_user.id,
+        body.content,
+        attachment_name=body.attachment_name,
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Chat topilmadi")
     return result
@@ -102,24 +134,13 @@ async def send_message_stream(
 async def update_chat(
     chat_id: uuid.UUID,
     body: ChatUpdate,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = ChatService(db)
+    if not await service.chat_repo.get_owned(chat_id, current_user.id):
+        raise HTTPException(status_code=404, detail="Chat topilmadi")
     chat = await service.chat_repo.update(chat_id, **body.model_dump(exclude_none=True))
     if not chat:
         raise HTTPException(status_code=404, detail="Chat topilmadi")
     return {"id": chat.id, "title": chat.title, "is_archived": chat.is_archived}
-
-
-@router.delete("/{chat_id}")
-async def delete_chat(
-    chat_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-):
-    from app.repositories.chat_repo import ChatRepository
-
-    repo = ChatRepository(db)
-    result = await repo.soft_delete(chat_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Chat topilmadi")
-    return {"message": "Chat o'chirildi"}

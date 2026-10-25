@@ -1,6 +1,7 @@
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChatCreate(BaseModel):
@@ -30,6 +31,8 @@ class ChatMessageResponse(BaseModel):
     content: str
     token_count: int
     created_at: str
+    attachment_name: str | None = None
+    sources: list[dict[str, Any]] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -37,6 +40,20 @@ class ChatMessageResponse(BaseModel):
 class SendMessageRequest(BaseModel):
     content: str
     chat_id: UUID | None = None
+    attachment_name: str | None = None
+
+
+class LegacyChatMessage(BaseModel):
+    id: str
+    role: Literal["user", "ai", "assistant"]
+    text: str
+    timestamp: str | None = None
+    attachment_name: str | None = None
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ImportChatHistoryRequest(BaseModel):
+    messages: list[LegacyChatMessage] = Field(max_length=5000)
 
 
 class SendMessageResponse(BaseModel):
